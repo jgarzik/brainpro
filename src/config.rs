@@ -148,8 +148,17 @@ pub fn load_agents_from_dir(dir: &Path) -> HashMap<String, AgentSpec> {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "toml") {
-                if let Ok(spec) = AgentSpec::load_from(&path) {
-                    agents.insert(spec.name.clone(), spec);
+                match AgentSpec::load_from(&path) {
+                    Ok(spec) => {
+                        agents.insert(spec.name.clone(), spec);
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "Warning: failed to load agent spec from {}: {}",
+                            path.display(),
+                            err
+                        );
+                    }
                 }
             }
         }

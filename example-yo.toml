@@ -145,3 +145,73 @@ auto_compact_enabled = true
 
 # Number of recent turns to keep after compaction
 keep_last_turns = 10
+
+# =============================================================================
+# MCP (Model Context Protocol) SERVERS
+# =============================================================================
+# Configure external tool servers that implement the MCP protocol.
+# Servers provide additional tools beyond the built-in Read/Write/Edit/Bash/etc.
+#
+# Each server has:
+#   command     - Path to the server executable (required)
+#   args        - Command-line arguments (default: [])
+#   env         - Environment variables (default: {})
+#   cwd         - Working directory (default: ".")
+#   enabled     - Whether this server can be used (default: true)
+#   autoStart   - Start server automatically on yo startup (default: false)
+#   timeoutMs   - Request timeout in milliseconds (default: 30000)
+#
+# Connect/disconnect servers in REPL with:
+#   /mcp list              - List configured servers
+#   /mcp connect <name>    - Start and connect to server
+#   /mcp disconnect <name> - Disconnect from server
+#   /mcp tools <name>      - List tools provided by server
+#
+# Permission rules can reference MCP tools:
+#   "mcp.*"           - Match all MCP tools
+#   "mcp.calc.*"      - Match all tools from the 'calc' server
+#   "mcp.calc.add"    - Match specific tool
+
+# Example MCP server configurations (uncomment to use):
+
+# [mcp.servers.calc]
+# command = "/path/to/mcp-calc-server"
+# args = []
+# enabled = true
+# autoStart = false
+# timeoutMs = 30000
+
+# [mcp.servers.git]
+# command = "npx"
+# args = ["-y", "@anthropic/mcp-server-git"]
+# cwd = "."
+# enabled = true
+# autoStart = false
+
+# [mcp.servers.filesystem]
+# command = "npx"
+# args = ["-y", "@anthropic/mcp-server-filesystem", "/path/to/allowed/dir"]
+# env = { "DEBUG" = "mcp:*" }
+# enabled = true
+# autoStart = false
+
+# =============================================================================
+# AGENTS (Subagents)
+# =============================================================================
+# Agents are defined in separate TOML files, not in this config:
+#   ~/.yo/agents/<name>.toml      (user-level)
+#   .yo/agents/<name>.toml        (project-level, overrides user-level)
+#
+# See fixtures/agents/ for examples. Each agent spec includes:
+#   name            - Agent identifier
+#   description     - What the agent does
+#   allowed_tools   - Tools the agent can use (default: ["Read", "Grep", "Glob"])
+#   permission_mode - "default", "acceptEdits", or "bypassPermissions"
+#   max_turns       - Maximum iterations (default: 8)
+#   system_prompt   - Custom system prompt
+#   skill           - Optional skill to use for LLM target
+#   target          - Optional explicit target (model@backend)
+#
+# Use agents in REPL with:
+#   /agents              - List available agents
+#   /task <agent> <prompt> - Run agent with prompt

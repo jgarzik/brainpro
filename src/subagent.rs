@@ -1,7 +1,7 @@
 //! Subagent runtime for executing specialized, restricted agent tasks.
 
 use crate::config::{AgentSpec, PermissionMode};
-use crate::policy::Decision;
+use crate::policy::{Decision, PolicyEngine};
 use crate::{cli::Context, llm, tools};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -17,14 +17,11 @@ pub struct InputContext {
     pub notes: Option<String>,
 }
 
-/// File context for a subagent
+/// File context for a subagent - hints about relevant files
+/// The subagent can use the Read tool to actually read file contents
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FileContext {
     pub path: String,
-    #[serde(default)]
-    pub max_bytes: Option<usize>,
-    #[serde(default)]
-    pub offset: Option<usize>,
 }
 
 /// Result from a subagent execution
@@ -79,14 +76,20 @@ pub fn clamp_mode(requested: PermissionMode, parent: PermissionMode) -> Permissi
 }
 
 /// Check if a tool name matches an allowed pattern
+/// Pattern formats: "ToolName" (exact) or "mcp.*" or "mcp.server.*" (wildcard)
 fn tool_matches_pattern(tool_name: &str, pattern: &str) -> bool {
     if pattern == tool_name {
         return true;
     }
 
     // Handle MCP wildcard patterns like "mcp.*" or "mcp.server.*"
+    // Pattern "mcp.*" matches "mcp.echo.add" but not "mcpfoo"
+    // Pattern "mcp.echo.*" matches "mcp.echo.add" but not "mcp.echoserver.add"
     if let Some(prefix) = pattern.strip_suffix(".*") {
-        return tool_name.starts_with(prefix) && tool_name.len() > prefix.len();
+        if let Some(remaining) = tool_name.strip_prefix(prefix) {
+            // Match at dot boundary: remaining must be empty or start with '.'
+            return remaining.is_empty() || remaining.starts_with('.');
+        }
     }
 
     false
@@ -165,6 +168,16 @@ pub fn run_subagent(
         &spec.allowed_tools,
     );
 
+    // Create a policy engine for this subagent with the effective (clamped) mode
+    // This ensures subagents cannot escalate permissions beyond their parent
+    let subagent_policy = {
+        let parent_policy = ctx.policy.borrow();
+        let mut subagent_config = parent_policy.config().clone();
+        subagent_config.mode = effective_mode;
+        // Subagents should not prompt interactively - deny if would need to ask
+        PolicyEngine::new(subagent_config, true, false)
+    };
+
     // Resolve target for subagent
     let config = ctx.config.borrow();
     let target = if let Some(target_str) = &spec.target {
@@ -240,6 +253,8 @@ pub fn run_subagent(
     let mut collected_text = String::new();
     let mut files_referenced: Vec<String> = Vec::new();
     let mut proposed_edits: Vec<ProposedEdit> = Vec::new();
+    let mut had_errors = false;
+    let mut last_error: Option<SubagentError> = None;
 
     // Run subagent loop
     for iteration in 1..=spec.max_turns {
@@ -359,24 +374,26 @@ pub fn run_subagent(
 
             // For Edit tool, track proposed edits
             if name == "Edit" {
-                if let (Some(path), Some(old), Some(new)) = (
-                    args.get("path").and_then(|p| p.as_str()),
-                    args.get("old_string").and_then(|s| s.as_str()),
-                    args.get("new_string").and_then(|s| s.as_str()),
-                ) {
-                    proposed_edits.push(ProposedEdit {
-                        path: path.to_string(),
-                        old_string: old.to_string(),
-                        new_string: new.to_string(),
-                    });
+                if let Some(path) = args.get("path").and_then(|p| p.as_str()) {
+                    if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+                        for edit in edits {
+                            if let (Some(find), Some(replace)) = (
+                                edit.get("find").and_then(|v| v.as_str()),
+                                edit.get("replace").and_then(|v| v.as_str()),
+                            ) {
+                                proposed_edits.push(ProposedEdit {
+                                    path: path.to_string(),
+                                    old_string: find.to_string(),
+                                    new_string: replace.to_string(),
+                                });
+                            }
+                        }
+                    }
                 }
             }
 
-            // Check policy (with effective clamped mode)
-            // For now, we use the parent's policy engine which already has the mode set
-            // In a more complete implementation, we'd create a temporary policy with the clamped mode
-            let (allowed, decision, matched_rule) =
-                ctx.policy.borrow().check_permission(name, &args);
+            // Check policy using subagent's clamped permission mode
+            let (allowed, decision, matched_rule) = subagent_policy.check_permission(name, &args);
 
             // Log policy decision
             let decision_str = match decision {
@@ -418,6 +435,20 @@ pub fn run_subagent(
                 json!({ "error": { "code": "permission_denied", "message": reason } })
             };
 
+            // Track if this tool call had an error
+            if let Some(err) = result.get("error") {
+                had_errors = true;
+                if let (Some(code), Some(message)) = (
+                    err.get("code").and_then(|c| c.as_str()),
+                    err.get("message").and_then(|m| m.as_str()),
+                ) {
+                    last_error = Some(SubagentError {
+                        code: code.to_string(),
+                        message: message.to_string(),
+                    });
+                }
+            }
+
             trace(
                 ctx,
                 agent_name,
@@ -439,7 +470,7 @@ pub fn run_subagent(
     let _ = ctx
         .transcript
         .borrow_mut()
-        .subagent_end(agent_name, true, duration_ms);
+        .subagent_end(agent_name, !had_errors, duration_ms);
 
     trace(
         ctx,
@@ -450,12 +481,12 @@ pub fn run_subagent(
 
     Ok(SubagentResult {
         agent: agent_name.clone(),
-        ok: true,
+        ok: !had_errors,
         output: SubagentOutput {
             text: collected_text,
             files_referenced,
             proposed_edits,
         },
-        error: None,
+        error: last_error,
     })
 }

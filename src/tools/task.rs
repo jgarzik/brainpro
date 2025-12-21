@@ -30,24 +30,17 @@ pub fn schema() -> Value {
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "path": { "type": "string" },
-                                        "max_bytes": { "type": "integer" },
-                                        "offset": { "type": "integer" }
+                                        "path": { "type": "string", "description": "File path hint for the subagent" }
                                     },
                                     "required": ["path"]
                                 },
-                                "description": "Files to include in context"
+                                "description": "File paths to hint to the subagent (it can use Read tool to access them)"
                             },
                             "notes": {
                                 "type": "string",
                                 "description": "Additional notes for the subagent"
                             }
                         }
-                    },
-                    "return_style": {
-                        "type": "string",
-                        "enum": ["summary", "patch_plan", "file_list"],
-                        "description": "How the subagent should format its response"
                     }
                 },
                 "required": ["agent", "prompt"]
