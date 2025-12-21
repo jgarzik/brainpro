@@ -7,6 +7,7 @@ mod llm;
 mod mcp;
 mod permissions;
 mod policy;
+mod subagent;
 mod tools;
 mod transcript;
 

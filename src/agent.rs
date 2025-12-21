@@ -45,8 +45,8 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
 
     trace(ctx, "TARGET", &format!("{} (skill: {})", target, skill));
 
-    // Get built-in tool schemas and add MCP tools if any servers are connected
-    let mut tool_schemas = tools::schemas();
+    // Get built-in tool schemas (including Task for main agent) and add MCP tools
+    let mut tool_schemas = tools::schemas_with_task();
     {
         let mcp_manager = ctx.mcp_manager.borrow();
         if mcp_manager.has_connected_servers() {
@@ -169,7 +169,10 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
             );
 
             let result = if allowed {
-                if name.starts_with("mcp.") {
+                if name == "Task" {
+                    // Execute Task tool (subagent delegation)
+                    tools::task::execute(args.clone(), ctx)?
+                } else if name.starts_with("mcp.") {
                     // Execute MCP tool
                     let start = std::time::Instant::now();
                     let mut mcp_manager = ctx.mcp_manager.borrow_mut();

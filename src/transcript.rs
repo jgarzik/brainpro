@@ -238,4 +238,50 @@ impl Transcript {
             }),
         )
     }
+
+    /// Log subagent start
+    pub fn subagent_start(
+        &mut self,
+        name: &str,
+        effective_mode: &str,
+        allowed_tools: &[String],
+    ) -> Result<()> {
+        self.log(
+            "subagent_start",
+            serde_json::json!({
+                "name": name,
+                "effective_mode": effective_mode,
+                "allowed_tools": allowed_tools,
+            }),
+        )
+    }
+
+    /// Log subagent end
+    pub fn subagent_end(&mut self, name: &str, ok: bool, duration_ms: u64) -> Result<()> {
+        self.log(
+            "subagent_end",
+            serde_json::json!({
+                "name": name,
+                "ok": ok,
+                "duration_ms": duration_ms,
+            }),
+        )
+    }
+
+    /// Log subagent tool call
+    pub fn subagent_tool_call(
+        &mut self,
+        agent: &str,
+        tool: &str,
+        args: &serde_json::Value,
+    ) -> Result<()> {
+        self.log(
+            "subagent_tool_call",
+            serde_json::json!({
+                "agent": agent,
+                "tool": tool,
+                "args": args,
+            }),
+        )
+    }
 }

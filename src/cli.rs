@@ -86,6 +86,9 @@ fn handle_command(ctx: &Context, cmd: &str, messages: &mut Vec<serde_json::Value
             println!("  /permissions rm allow|ask|deny <index>");
             println!("Context:");
             println!("  /context        - show context usage stats");
+            println!("Subagents:");
+            println!("  /agents                - list available subagents");
+            println!("  /task <agent> <prompt> - run a subagent with the given prompt");
             println!("MCP (Model Context Protocol):");
             println!("  /mcp list              - list configured MCP servers");
             println!("  /mcp connect <name>    - connect to an MCP server");
@@ -204,6 +207,12 @@ fn handle_command(ctx: &Context, cmd: &str, messages: &mut Vec<serde_json::Value
         }
         "/mcp" => {
             handle_mcp_command(ctx, if parts.len() > 1 { parts[1] } else { "" });
+        }
+        "/agents" => {
+            handle_agents_command(ctx);
+        }
+        "/task" => {
+            handle_task_command(ctx, if parts.len() > 1 { parts[1] } else { "" });
         }
         _ => println!("Unknown command: {}", parts[0]),
     }
@@ -390,6 +399,81 @@ fn handle_mcp_command(ctx: &Context, args: &str) {
             println!("  /mcp connect <name>    - connect to an MCP server");
             println!("  /mcp disconnect <name> - disconnect from an MCP server");
             println!("  /mcp tools <name>      - list tools from an MCP server");
+        }
+    }
+}
+
+fn handle_agents_command(ctx: &Context) {
+    let config = ctx.config.borrow();
+    if config.agents.is_empty() {
+        println!("No subagents configured.");
+        println!("Add agent definitions to .yo/agents/<name>.toml");
+    } else {
+        println!("Available subagents:");
+        for (name, spec) in &config.agents {
+            println!(
+                "  {} - {} [tools: {}]",
+                name,
+                spec.description,
+                spec.allowed_tools.join(", ")
+            );
+        }
+    }
+}
+
+fn handle_task_command(ctx: &Context, args: &str) {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+
+    if parts.is_empty() || parts[0].is_empty() {
+        println!("Usage: /task <agent> <prompt>");
+        println!("Run '/agents' to see available subagents.");
+        return;
+    }
+
+    let agent_name = parts[0];
+    let prompt = if parts.len() > 1 { parts[1] } else { "" };
+
+    if prompt.is_empty() {
+        println!("Error: prompt is required");
+        println!("Usage: /task <agent> <prompt>");
+        return;
+    }
+
+    // Get agent spec
+    let config = ctx.config.borrow();
+    let spec = match config.agents.get(agent_name) {
+        Some(s) => s.clone(),
+        None => {
+            let available: Vec<&String> = config.agents.keys().collect();
+            println!(
+                "Agent '{}' not found. Available agents: {:?}",
+                agent_name, available
+            );
+            return;
+        }
+    };
+    drop(config);
+
+    println!("Running subagent '{}'...", agent_name);
+
+    // Run the subagent
+    match crate::subagent::run_subagent(ctx, &spec, prompt, None) {
+        Ok(result) => {
+            if result.ok {
+                println!("\n--- Subagent Output ---");
+                println!("{}", result.output.text);
+                if !result.output.files_referenced.is_empty() {
+                    println!("\nFiles referenced: {:?}", result.output.files_referenced);
+                }
+                if !result.output.proposed_edits.is_empty() {
+                    println!("\nProposed edits: {}", result.output.proposed_edits.len());
+                }
+            } else if let Some(error) = &result.error {
+                println!("Subagent error: {} - {}", error.code, error.message);
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to run subagent: {}", e);
         }
     }
 }

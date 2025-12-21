@@ -8,6 +8,7 @@ An open source, local agentic butler for software development. `yo` orchestrates
 - **Multi-backend LLM support** - Venice (default), OpenAI, Anthropic, Ollama, or custom endpoints
 - **Built-in tools** - Read, Write, Edit, Grep, Glob, Bash
 - **MCP integration** - Connect external tool servers via Model Context Protocol
+- **Subagents** - Delegate tasks to specialized agents with restricted tools
 - **Permission system** - Granular allow/ask/deny rules for tool access
 - **Skill routing** - Map named skills to specific model@backend targets
 - **Session transcripts** - JSONL audit logs of all interactions
@@ -70,6 +71,8 @@ yo -p "refactor main.rs" --yes
 | `/permissions` | Show permission rules |
 | `/permissions add [allow\|ask\|deny] "pattern"` | Add rule |
 | `/trace` | Toggle tracing |
+| `/agents` | List available subagents |
+| `/task <agent> <prompt>` | Run a subagent with the given prompt |
 | `/mcp list` | List MCP servers |
 | `/mcp connect <name>` | Connect to MCP server |
 | `/mcp disconnect <name>` | Disconnect MCP server |
@@ -140,6 +143,63 @@ See `example-yo.toml` for complete reference.
 - All paths validated to stay within project root
 - Symlinks resolved to prevent escape
 
+## Subagents
+
+Subagents allow delegating tasks to specialized agents with restricted tools and permissions.
+
+### Agent Spec Format
+
+Agent specs are stored in `.yo/agents/<name>.toml`:
+
+```toml
+name = "scout"
+description = "Read-only repo scout: find files, summarize structure"
+allowed_tools = ["Read", "Grep", "Glob"]
+permission_mode = "default"
+max_turns = 8
+system_prompt = """
+You are Scout, a read-only exploration agent.
+Use Glob to find files, Grep to search, Read to examine.
+"""
+
+# Optional: override skill or target
+# skill = "fast"
+# target = "gpt-4o-mini@chatgpt"
+```
+
+### Built-in Agents
+
+| Agent | Tools | Description |
+|-------|-------|-------------|
+| `scout` | Read, Grep, Glob | Read-only exploration |
+| `patch` | Read, Grep, Glob, Edit, Write | Code editing |
+| `test` | Read, Bash | Test execution |
+| `docs` | Read, Write, Glob | Documentation writing |
+
+### Using Subagents
+
+**Via REPL:**
+```
+/agents                           # List available agents
+/task scout find the config parser
+```
+
+**Via LLM (Task tool):**
+The main agent can delegate using the `Task` tool:
+```json
+{
+  "agent": "scout",
+  "prompt": "Find where config parsing happens"
+}
+```
+
+### Safety
+
+- Subagents cannot spawn other subagents (no recursion)
+- Permission mode is clamped to parent's mode (subagent cannot exceed parent permissions)
+- Tool access is restricted to `allowed_tools` list
+- Subagent activity is logged to transcripts
+
 ## Architecture
 
 ```
@@ -194,7 +254,9 @@ User Input
 | `tools/bash.rs` | Shell command execution with timeout |
 | `tools/grep.rs` | Regex content search |
 | `tools/glob.rs` | File pattern matching |
+| `tools/task.rs` | Subagent delegation tool |
 | `tools/mcp_dispatch.rs` | Route MCP tool calls |
+| `subagent.rs` | Subagent runtime, tool filtering, mode clamping |
 | `mcp/client.rs` | MCP JSON-RPC client |
 | `mcp/manager.rs` | MCP server lifecycle |
 | `mcp/transport.rs` | Stdio transport layer |
@@ -218,5 +280,6 @@ Sessions logged to `.yo/sessions/<uuid>.jsonl` with events:
 - User/assistant messages
 - Tool calls and results
 - Permission decisions
+- Subagent lifecycle (start, end, tool calls)
 - MCP server lifecycle
 - Errors and metadata

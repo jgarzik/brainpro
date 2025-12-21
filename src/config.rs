@@ -90,6 +90,74 @@ pub struct McpConfig {
     pub servers: HashMap<String, McpServerConfig>,
 }
 
+/// Specification for a subagent
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AgentSpec {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub skill: Option<String>,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default = "default_allowed_tools")]
+    pub allowed_tools: Vec<String>,
+    #[serde(default = "default_permission_mode_str")]
+    pub permission_mode: String,
+    #[serde(default = "default_max_turns")]
+    pub max_turns: usize,
+    #[serde(default)]
+    pub system_prompt: Option<String>,
+}
+
+fn default_allowed_tools() -> Vec<String> {
+    vec!["Read".to_string(), "Grep".to_string(), "Glob".to_string()]
+}
+
+fn default_permission_mode_str() -> String {
+    "default".to_string()
+}
+
+fn default_max_turns() -> usize {
+    8
+}
+
+impl AgentSpec {
+    /// Get the parsed permission mode
+    pub fn get_permission_mode(&self) -> PermissionMode {
+        PermissionMode::from_str(&self.permission_mode).unwrap_or(PermissionMode::Default)
+    }
+
+    /// Load agent spec from a TOML file
+    pub fn load_from(path: &Path) -> Result<Self> {
+        let content = std::fs::read_to_string(path)?;
+        let spec: AgentSpec = toml::from_str(&content)?;
+        Ok(spec)
+    }
+}
+
+/// Load all agent specs from a directory
+pub fn load_agents_from_dir(dir: &Path) -> HashMap<String, AgentSpec> {
+    let mut agents = HashMap::new();
+
+    if !dir.exists() {
+        return agents;
+    }
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "toml") {
+                if let Ok(spec) = AgentSpec::load_from(&path) {
+                    agents.insert(spec.name.clone(), spec);
+                }
+            }
+        }
+    }
+
+    agents
+}
+
 /// Configuration for context management
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ContextConfig {
@@ -202,6 +270,8 @@ pub struct Config {
     pub context: ContextConfig,
     #[serde(default)]
     pub mcp: McpConfig,
+    #[serde(skip)]
+    pub agents: HashMap<String, AgentSpec>,
 }
 
 impl Config {
@@ -253,12 +323,14 @@ impl Config {
             bash: BashConfig::default(),
             context: ContextConfig::default(),
             mcp: McpConfig::default(),
+            agents: HashMap::new(),
         }
     }
 
     /// Load configuration from default paths
     /// Priority: local (.yo/config.local.toml) > project (.yo/config.toml) > user (~/.yo/config.toml)
     /// Starts with built-in backends, then merges user/project/local configs
+    /// Also loads agents from .yo/agents/ and ~/.yo/agents/
     pub fn load() -> Result<Self> {
         let mut config = Self::with_builtin_backends();
 
@@ -269,6 +341,12 @@ impl Config {
                 let user = Self::load_from(&user_config)?;
                 config.merge(user);
             }
+
+            // Load user-level agents (~/.yo/agents/)
+            let user_agents_dir = home.join(".yo").join("agents");
+            for (name, spec) in load_agents_from_dir(&user_agents_dir) {
+                config.agents.insert(name, spec);
+            }
         }
 
         // Try project-level config (overrides user-level)
@@ -276,6 +354,12 @@ impl Config {
         if project_config.exists() {
             let project = Self::load_from(&project_config)?;
             config.merge(project);
+        }
+
+        // Load project-level agents (.yo/agents/) - overrides user-level
+        let project_agents_dir = Path::new(".yo").join("agents");
+        for (name, spec) in load_agents_from_dir(&project_agents_dir) {
+            config.agents.insert(name, spec);
         }
 
         // Try local config (overrides project-level, should be gitignored)
