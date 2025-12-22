@@ -42,20 +42,27 @@ pub fn execute(args: Value, root: &Path) -> anyhow::Result<Value> {
     let slice = &data[offset.min(data.len())..end];
     let truncated = end < data.len();
 
-    let (content, encoding) = match std::str::from_utf8(slice) {
-        Ok(s) => (s.to_string(), None),
+    let (content, encoding, lines_read) = match std::str::from_utf8(slice) {
+        Ok(s) => {
+            let line_count = s.lines().count();
+            (s.to_string(), None, line_count)
+        }
         Err(_) => (
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, slice),
             Some("base64"),
+            0,
         ),
     };
+
+    eprintln!("Read {} lines", lines_read);
 
     let mut result = json!({
         "path": path,
         "offset": offset,
         "truncated": truncated,
         "content": content,
-        "sha256": sha256(&data)
+        "sha256": sha256(&data),
+        "lines": lines_read
     });
 
     if let Some(enc) = encoding {

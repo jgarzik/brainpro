@@ -46,9 +46,13 @@ pub fn execute(args: Value, root: &Path) -> anyhow::Result<Value> {
         return Ok(json!({ "error": { "code": "write_error", "message": e.to_string() } }));
     }
 
+    let lines_written = content.lines().count();
+    eprintln!("Wrote {} lines", lines_written);
+
     Ok(json!({
         "path": path,
         "bytes_written": bytes.len(),
+        "lines": lines_written,
         "sha256": sha256(bytes)
     }))
 }
