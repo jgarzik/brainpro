@@ -187,6 +187,11 @@ pub fn run_turn(
                 SYSTEM_PROMPT.to_string()
             };
 
+            // Add optimization mode instructions if -O flag is set
+            if ctx.args.optimize {
+                system_prompt.push_str("\n\nOPTIMIZATION MODE: Generate terse, precise output optimized for AI agent consumption. Minimize tokens while maximizing information density. Omit pleasantries, verbose explanations, and redundant context. Every token must earn its place.");
+            }
+
             // Add skill pack index
             let skill_index = ctx.skill_index.borrow();
             let skill_prompt = skill_index.format_for_prompt(50);
@@ -224,6 +229,23 @@ pub fn run_turn(
         if let Some(usage) = &response.usage {
             stats.input_tokens += usage.prompt_tokens;
             stats.output_tokens += usage.completion_tokens;
+
+            // Record cost for this operation
+            let turn_number = *ctx.turn_counter.borrow();
+            let op = ctx.session_costs.borrow_mut().record_operation(
+                turn_number,
+                &target.model,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+            );
+
+            // Log token usage to transcript
+            let _ = ctx.transcript.borrow_mut().token_usage(
+                &target.model,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                op.cost_usd,
+            );
         }
 
         if response.choices.is_empty() {

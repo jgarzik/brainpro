@@ -5,8 +5,14 @@
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+
+/// Cached regex for parsing STEP lines in plan output
+static STEP_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
+    regex::Regex::new(r"(?i)STEP\s+(\d+):\s*(.+)").expect("Invalid step regex")
+});
 
 // ============================================================================
 // Core Data Structures
@@ -390,15 +396,14 @@ pub fn parse_plan_output(output: &str, goal: &str) -> Result<Plan> {
         plan.summary = summary;
     }
 
-    // Parse STEPs using regex
-    let step_re = regex::Regex::new(r"(?i)STEP\s+(\d+):\s*(.+)")?;
+    // Parse STEPs using cached regex
     let mut current_step: Option<PlanStep> = None;
     let mut in_description = false;
 
     for line in plan_block.lines() {
         let trimmed = line.trim();
 
-        if let Some(caps) = step_re.captures(trimmed) {
+        if let Some(caps) = STEP_REGEX.captures(trimmed) {
             // Save previous step if exists
             if let Some(step) = current_step.take() {
                 plan.steps.push(step);

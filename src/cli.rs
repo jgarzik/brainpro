@@ -4,6 +4,7 @@ use crate::{
     config::Config,
     config::PermissionMode,
     config::Target,
+    cost::{format_cost, SessionCosts},
     hooks::HookManager,
     mcp::manager::McpManager,
     model_routing::ModelRouter,
@@ -44,22 +45,35 @@ pub struct Context {
     pub model_router: RefCell<ModelRouter>,
     pub plan_mode: RefCell<PlanModeState>,
     pub hooks: RefCell<HookManager>,
+    // Cost tracking
+    pub session_costs: RefCell<SessionCosts>,
+    pub turn_counter: RefCell<u32>,
 }
 
 /// Print command stats to stderr
-fn print_stats(duration: Duration, stats: &CommandStats) {
+fn print_stats(duration: Duration, stats: &CommandStats, cost: Option<f64>) {
     let tokens = stats.total_tokens();
     let token_display = if tokens >= 1000 {
         format!("{:.1}k", tokens as f64 / 1000.0)
     } else {
         tokens.to_string()
     };
-    eprintln!(
-        "[Duration: {:.1}s | Tokens: {} | Tools: {}]",
-        duration.as_secs_f64(),
-        token_display,
-        stats.tool_uses
-    );
+    if let Some(cost_usd) = cost {
+        eprintln!(
+            "[Duration: {:.1}s | Tokens: {} | Cost: {} | Tools: {}]",
+            duration.as_secs_f64(),
+            token_display,
+            format_cost(cost_usd),
+            stats.tool_uses
+        );
+    } else {
+        eprintln!(
+            "[Duration: {:.1}s | Tokens: {} | Tools: {}]",
+            duration.as_secs_f64(),
+            token_display,
+            stats.tool_uses
+        );
+    }
 }
 
 pub fn run_once(ctx: &Context, prompt: &str) -> Result<()> {
@@ -71,10 +85,30 @@ pub fn run_once(ctx: &Context, prompt: &str) -> Result<()> {
     }
     let prompt = updated_prompt.as_deref().unwrap_or(prompt);
 
+    // Increment turn counter
+    let turn_number = {
+        let mut counter = ctx.turn_counter.borrow_mut();
+        *counter += 1;
+        *counter
+    };
+
     let start = Instant::now();
     let mut messages = Vec::new();
     let stats = agent::run_turn(ctx, prompt, &mut messages)?;
-    print_stats(start.elapsed(), &stats);
+
+    // Get cost for this turn if cost tracking is enabled
+    let cost = if ctx.config.borrow().cost_tracking.display_in_stats {
+        let costs = ctx.session_costs.borrow();
+        costs
+            .turns()
+            .iter()
+            .find(|t| t.turn_number == turn_number)
+            .map(|t| t.total_cost())
+    } else {
+        None
+    };
+
+    print_stats(start.elapsed(), &stats, cost);
     Ok(())
 }
 
@@ -112,10 +146,28 @@ pub fn run_repl(ctx: Context) -> Result<()> {
                 }
                 let line = updated_prompt.unwrap_or_else(|| line.to_string());
 
+                // Increment turn counter
+                let turn_number = {
+                    let mut counter = ctx.turn_counter.borrow_mut();
+                    *counter += 1;
+                    *counter
+                };
+
                 let start = Instant::now();
                 match agent::run_turn(&ctx, &line, &mut messages) {
                     Ok(stats) => {
-                        print_stats(start.elapsed(), &stats);
+                        // Get cost for this turn if cost tracking is enabled
+                        let cost = if ctx.config.borrow().cost_tracking.display_in_stats {
+                            let costs = ctx.session_costs.borrow();
+                            costs
+                                .turns()
+                                .iter()
+                                .find(|t| t.turn_number == turn_number)
+                                .map(|t| t.total_cost())
+                        } else {
+                            None
+                        };
+                        print_stats(start.elapsed(), &stats, cost);
                     }
                     Err(e) => {
                         eprintln!("Error: {}", e);
@@ -159,6 +211,7 @@ fn handle_command(ctx: &Context, cmd: &str, messages: &mut Vec<serde_json::Value
             println!("  /permissions rm allow|ask|deny <index>");
             println!("Context:");
             println!("  /context        - show context usage stats");
+            println!("  /cost           - show session cost breakdown");
             println!("Subagents:");
             println!("  /agents                - list available subagents");
             println!("  /task <agent> <prompt> - run a subagent with the given prompt");
@@ -261,6 +314,9 @@ fn handle_command(ctx: &Context, cmd: &str, messages: &mut Vec<serde_json::Value
             println!("  Messages: {} ({} chars)", messages.len(), total_chars);
             println!("  Max: {} chars", max_chars);
             println!("  Usage: {:.1}%", usage_pct);
+        }
+        "/cost" => {
+            handle_cost_command(ctx);
         }
         "/mcp" => {
             handle_mcp_command(ctx, if parts.len() > 1 { parts[1] } else { "" });
@@ -469,6 +525,59 @@ fn handle_mcp_command(ctx: &Context, args: &str) {
     }
 }
 
+fn handle_cost_command(ctx: &Context) {
+    use crate::cost::format_tokens;
+
+    let costs = ctx.session_costs.borrow();
+    let total_cost = costs.total_cost();
+    let total_tokens = costs.total_tokens();
+
+    println!("Session Cost Summary");
+    println!("────────────────────");
+    println!(
+        "Total: {} ({} tokens)",
+        format_cost(total_cost),
+        format_tokens(total_tokens)
+    );
+
+    // Breakdown by model
+    let by_model = costs.cost_by_model();
+    if !by_model.is_empty() {
+        println!("\nBy Model:");
+        let mut models: Vec<_> = by_model.iter().collect();
+        models.sort_by(|a, b| b.1 .1.partial_cmp(&a.1 .1).unwrap_or(std::cmp::Ordering::Equal));
+        for (model, (tokens, cost)) in models {
+            println!(
+                "  {}: {} ({} tokens)",
+                model,
+                format_cost(*cost),
+                format_tokens(*tokens)
+            );
+        }
+    }
+
+    // Breakdown by turn
+    let turns = costs.turns();
+    if !turns.is_empty() {
+        println!("\nBy Turn:");
+        for turn in turns {
+            println!(
+                "  Turn {}: {} ({} tokens)",
+                turn.turn_number,
+                format_cost(turn.total_cost()),
+                format_tokens(turn.total_tokens())
+            );
+        }
+    }
+
+    // Check for warning threshold
+    if let Some(threshold) = ctx.config.borrow().cost_tracking.warn_threshold_usd {
+        if total_cost > threshold {
+            println!("\n⚠️  Session cost exceeds threshold of {}", format_cost(threshold));
+        }
+    }
+}
+
 fn handle_agents_command(ctx: &Context) {
     let config = ctx.config.borrow();
     if config.agents.is_empty() {
@@ -538,7 +647,8 @@ fn handle_task_command(ctx: &Context, args: &str) {
             } else if let Some(error) = &result.error {
                 println!("Subagent error: {} - {}", error.code, error.message);
             }
-            print_stats(start.elapsed(), &stats);
+            // TODO: Add cost tracking for explicit /task commands
+            print_stats(start.elapsed(), &stats, None);
         }
         Err(e) => {
             eprintln!("Failed to run subagent: {}", e);
@@ -741,11 +851,28 @@ fn handle_plan_start(ctx: &Context, goal: String, messages: &mut Vec<serde_json:
     // Log to transcript
     let _ = ctx.transcript.borrow_mut().plan_mode_start(&goal);
 
+    // Increment turn counter for plan mode
+    let turn_number = {
+        let mut counter = ctx.turn_counter.borrow_mut();
+        *counter += 1;
+        *counter
+    };
+
     // Run the planning turn
     let start = Instant::now();
     match agent::run_turn(ctx, &goal, messages) {
         Ok(stats) => {
-            print_stats(start.elapsed(), &stats);
+            let cost = if ctx.config.borrow().cost_tracking.display_in_stats {
+                let costs = ctx.session_costs.borrow();
+                costs
+                    .turns()
+                    .iter()
+                    .find(|t| t.turn_number == turn_number)
+                    .map(|t| t.total_cost())
+            } else {
+                None
+            };
+            print_stats(start.elapsed(), &stats, cost);
 
             // Check if we got a plan
             let state = ctx.plan_mode.borrow();
@@ -860,6 +987,13 @@ fn handle_plan_execute(ctx: &Context, messages: &mut Vec<serde_json::Value>) {
             }
         );
 
+        // Increment turn counter for plan step
+        let turn_number = {
+            let mut counter = ctx.turn_counter.borrow_mut();
+            *counter += 1;
+            *counter
+        };
+
         // Execute the step
         let start = Instant::now();
         let result = agent::run_turn(ctx, &prompt, messages);
@@ -893,7 +1027,17 @@ fn handle_plan_execute(ctx: &Context, messages: &mut Vec<serde_json::Value>) {
 
         match result {
             Ok(stats) => {
-                print_stats(start.elapsed(), &stats);
+                let cost = if ctx.config.borrow().cost_tracking.display_in_stats {
+                    let costs = ctx.session_costs.borrow();
+                    costs
+                        .turns()
+                        .iter()
+                        .find(|t| t.turn_number == turn_number)
+                        .map(|t| t.total_cost())
+                } else {
+                    None
+                };
+                print_stats(start.elapsed(), &stats, cost);
                 println!("\nStep {} complete.", step.number);
             }
             Err(e) => {

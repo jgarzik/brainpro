@@ -2,6 +2,7 @@ mod agent;
 mod backend;
 mod cli;
 mod config;
+mod cost;
 mod hooks;
 mod llm;
 mod mcp;
@@ -10,6 +11,7 @@ mod plan;
 mod policy;
 mod skillpacks;
 mod subagent;
+mod tool_filter;
 mod tools;
 mod transcript;
 
@@ -87,6 +89,9 @@ pub struct Args {
 
     #[arg(long, help = "Debug output (print HTTP details and settings)")]
     pub debug: bool,
+
+    #[arg(short = 'O', long = "optimize", help = "Optimize output for token efficiency")]
+    pub optimize: bool,
 }
 
 fn main() -> Result<()> {
@@ -156,6 +161,17 @@ fn main() -> Result<()> {
         ));
     }
 
+    // Validate configuration
+    if let Err(errors) = cfg.validate() {
+        for err in &errors {
+            eprintln!("Config error {}", err);
+        }
+        return Err(anyhow::anyhow!(
+            "Configuration has {} validation error(s)",
+            errors.len()
+        ));
+    }
+
     // Apply CLI permission overrides
     if let Some(mode_str) = &args.mode {
         if let Some(mode) = config::PermissionMode::from_str(mode_str) {
@@ -220,6 +236,10 @@ fn main() -> Result<()> {
     // Create hook manager
     let hook_manager = hooks::HookManager::new(cfg.hooks.clone(), session_id.clone(), root.clone());
 
+    // Create cost tracker with pricing from config
+    let pricing_table = cost::PricingTable::from_config(&cfg.model_pricing);
+    let session_costs = cost::SessionCosts::new(session_id.clone(), pricing_table);
+
     let ctx = cli::Context {
         args,
         root,
@@ -236,6 +256,8 @@ fn main() -> Result<()> {
         model_router: RefCell::new(model_router),
         plan_mode: RefCell::new(plan::PlanModeState::new()),
         hooks: RefCell::new(hook_manager),
+        session_costs: RefCell::new(session_costs),
+        turn_counter: RefCell::new(0),
     };
 
     // Fire SessionStart hook

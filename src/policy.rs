@@ -103,49 +103,7 @@ impl PolicyEngine {
     /// Check if a rule pattern matches a tool call
     /// Pattern format: "ToolName" or "ToolName(prefix:*)" or "mcp.*" or "mcp.server.*"
     fn rule_matches(pattern: &str, tool: &str, arg: Option<&str>) -> bool {
-        // Simple tool name match: "Write" matches all Write calls
-        if pattern == tool {
-            return true;
-        }
-
-        // MCP wildcard matching: "mcp.*" or "mcp.server.*"
-        // Pattern "mcp.*" matches any MCP tool (e.g., "mcp.echo.add")
-        // Pattern "mcp.echo.*" matches any tool from echo server (e.g., "mcp.echo.add", "mcp.echo.echo")
-        if pattern.ends_with(".*") && tool.starts_with("mcp.") {
-            let prefix = &pattern[..pattern.len() - 2]; // Remove ".*"
-            if let Some(remaining) = tool.strip_prefix(prefix) {
-                // Check that the match is at a dot boundary
-                if remaining.is_empty() || remaining.starts_with('.') {
-                    return true;
-                }
-            }
-        }
-
-        // Pattern with argument: "Bash(git diff:*)" or "Edit(src/lib.rs)"
-        if let Some(open_paren) = pattern.find('(') {
-            let rule_tool = &pattern[..open_paren];
-            if rule_tool != tool {
-                return false;
-            }
-
-            // Extract the argument pattern
-            let close_paren = pattern.rfind(')').unwrap_or(pattern.len());
-            let arg_pattern = &pattern[open_paren + 1..close_paren];
-
-            let Some(arg) = arg else {
-                return false;
-            };
-
-            // Check for prefix match: "git diff:*"
-            if let Some(prefix) = arg_pattern.strip_suffix(":*") {
-                return arg.starts_with(prefix);
-            }
-
-            // Exact match
-            return arg_pattern == arg;
-        }
-
-        false
+        crate::tool_filter::tool_matches(tool, pattern, arg)
     }
 
     /// Determine the permission decision for a tool call

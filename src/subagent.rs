@@ -76,25 +76,7 @@ pub fn clamp_mode(requested: PermissionMode, parent: PermissionMode) -> Permissi
     }
 }
 
-/// Check if a tool name matches an allowed pattern
-/// Pattern formats: "ToolName" (exact) or "mcp.*" or "mcp.server.*" (wildcard)
-fn tool_matches_pattern(tool_name: &str, pattern: &str) -> bool {
-    if pattern == tool_name {
-        return true;
-    }
-
-    // Handle MCP wildcard patterns like "mcp.*" or "mcp.server.*"
-    // Pattern "mcp.*" matches "mcp.echo.add" but not "mcpfoo"
-    // Pattern "mcp.echo.*" matches "mcp.echo.add" but not "mcp.echoserver.add"
-    if let Some(prefix) = pattern.strip_suffix(".*") {
-        if let Some(remaining) = tool_name.strip_prefix(prefix) {
-            // Match at dot boundary: remaining must be empty or start with '.'
-            return remaining.is_empty() || remaining.starts_with('.');
-        }
-    }
-
-    false
-}
+use crate::tool_filter;
 
 /// Filter tool schemas to only include allowed tools
 pub fn filter_tool_schemas(allowed_tools: &[String]) -> Vec<Value> {
@@ -105,9 +87,7 @@ pub fn filter_tool_schemas(allowed_tools: &[String]) -> Vec<Value> {
         .filter(|schema| {
             if let Some(func) = schema.get("function") {
                 if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
-                    return allowed_tools
-                        .iter()
-                        .any(|pattern| tool_matches_pattern(name, pattern));
+                    return tool_filter::tool_matches_any_simple(name, allowed_tools);
                 }
             }
             false
@@ -122,9 +102,7 @@ fn is_tool_allowed(tool_name: &str, allowed_tools: &[String]) -> bool {
         return false;
     }
 
-    allowed_tools
-        .iter()
-        .any(|pattern| tool_matches_pattern(tool_name, pattern))
+    tool_filter::tool_matches_any_simple(tool_name, allowed_tools)
 }
 
 fn trace(ctx: &Context, agent: &str, label: &str, content: &str) {
@@ -209,9 +187,18 @@ pub fn run_subagent(
     trace(ctx, agent_name, "TARGET", &format!("{}", target));
 
     // Build system prompt for subagent
-    let system_prompt = spec.system_prompt.as_deref().unwrap_or(
-        "You are a specialized subagent. Complete the assigned task using only your available tools."
-    );
+    let mut system_prompt = spec
+        .system_prompt
+        .as_deref()
+        .unwrap_or(
+            "You are a specialized subagent. Complete the assigned task using only your available tools.",
+        )
+        .to_string();
+
+    // Add optimization mode instructions if -O flag is set
+    if ctx.args.optimize {
+        system_prompt.push_str("\n\nOPTIMIZATION MODE: Generate terse, precise output optimized for AI agent consumption. Minimize tokens while maximizing information density. Omit pleasantries, verbose explanations, and redundant context. Every token must earn its place.");
+    }
 
     // Build initial messages
     let mut messages: Vec<Value> = Vec::new();
@@ -304,6 +291,23 @@ pub fn run_subagent(
         if let Some(usage) = &response.usage {
             stats.input_tokens += usage.prompt_tokens;
             stats.output_tokens += usage.completion_tokens;
+
+            // Record cost for this operation (uses parent turn number)
+            let turn_number = *ctx.turn_counter.borrow();
+            let op = ctx.session_costs.borrow_mut().record_operation(
+                turn_number,
+                &target.model,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+            );
+
+            // Log token usage to transcript
+            let _ = ctx.transcript.borrow_mut().token_usage(
+                &target.model,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                op.cost_usd,
+            );
         }
 
         if response.choices.is_empty() {

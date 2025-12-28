@@ -345,4 +345,24 @@ impl Transcript {
             }),
         )
     }
+
+    /// Log token usage for an LLM call
+    pub fn token_usage(
+        &mut self,
+        model: &str,
+        input_tokens: u64,
+        output_tokens: u64,
+        cost_usd: f64,
+    ) -> Result<()> {
+        self.log(
+            "token_usage",
+            serde_json::json!({
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+                "cost_usd": cost_usd,
+            }),
+        )
+    }
 }
