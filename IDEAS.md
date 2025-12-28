@@ -61,7 +61,9 @@ Optimized result:
 
 ---
 
-### Layer 4: History Summarization
+### Layer 4: History Summarization ✓ (Partial)
+
+**Status**: Basic implementation in `compact.rs`. Uses LLM to summarize older messages when context grows large. Triggered via `/compact` command or auto-compact threshold.
 
 **Concept**: Compress older conversation turns to maintain context while reducing tokens.
 

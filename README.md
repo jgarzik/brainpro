@@ -86,6 +86,9 @@ yo -p "refactor main.rs" --yes
 | `/mcp connect <name>` | Connect to MCP server |
 | `/mcp disconnect <name>` | Disconnect MCP server |
 | `/mcp tools <name>` | List tools from MCP server |
+| `/compact` | Summarize older messages to reclaim context |
+| `/commands` | List available slash commands |
+| `/<name> [args]` | Run user-defined slash command |
 
 ## Configuration
 
@@ -121,7 +124,8 @@ auto_compact_enabled = true
 
 [mcp.servers.calc]
 command = "/path/to/mcp-calc"
-args = []
+transport = "stdio"  # or "http", "sse"
+# url = "https://..."  # for http/sse transports
 auto_start = false
 
 [model_routing.routes]
@@ -255,6 +259,34 @@ The agent can activate skills using the `ActivateSkill` tool, or by mentioning `
 
 When multiple skills are active, their `allowed-tools` are intersected. Only tools allowed by all active skills can be used.
 
+## Slash Commands
+
+User-defined commands stored as markdown files:
+- `.yo/commands/<name>.md` (project)
+- `~/.yo/commands/<name>.md` (user)
+
+### Format
+
+```markdown
+---
+description: Fix an issue by number
+allowed_tools:
+  - Read
+  - Edit
+---
+
+Fix issue #$ARGUMENTS in the codebase. Read relevant files, make the fix.
+```
+
+Use `$ARGUMENTS` placeholder for user input. Frontmatter is optional.
+
+### Usage
+
+```
+/fix-issue 123          # Runs fix-issue.md with "123" as $ARGUMENTS
+/commands               # List available commands
+```
+
 ## Model Routing
 
 Model routing automatically selects the best model for each subagent based on task type. Different models excel at different tasks—planning, coding, exploration, etc.
@@ -338,7 +370,8 @@ User Input
 | `backend.rs` | Backend registry, lazy client initialization |
 | `llm.rs` | OpenAI-compatible HTTP client |
 | `transcript.rs` | JSONL session logging |
-| `context.rs` | Conversation history, compaction framework |
+| `compact.rs` | Context compaction via LLM summarization |
+| `commands.rs` | Slash command loader and dispatch |
 | `tools/mod.rs` | Tool registry, path validation, dispatch |
 | `tools/read.rs` | Read file contents |
 | `tools/write.rs` | Create/overwrite files |
@@ -357,7 +390,7 @@ User Input
 | `model_routing.rs` | Task-based model selection |
 | `mcp/client.rs` | MCP JSON-RPC client |
 | `mcp/manager.rs` | MCP server lifecycle |
-| `mcp/transport.rs` | Stdio transport layer |
+| `mcp/transport.rs` | Transport layer (stdio, http, sse) |
 
 ### Data Flow
 
