@@ -546,7 +546,10 @@ impl Config {
             if Target::parse(target).is_none() {
                 errors.push(ValidationError {
                     field: "default_target".to_string(),
-                    message: format!("Invalid target format '{}', expected 'model@backend'", target),
+                    message: format!(
+                        "Invalid target format '{}', expected 'model@backend'",
+                        target
+                    ),
                 });
             }
         }

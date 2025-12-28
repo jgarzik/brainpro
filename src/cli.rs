@@ -545,7 +545,11 @@ fn handle_cost_command(ctx: &Context) {
     if !by_model.is_empty() {
         println!("\nBy Model:");
         let mut models: Vec<_> = by_model.iter().collect();
-        models.sort_by(|a, b| b.1 .1.partial_cmp(&a.1 .1).unwrap_or(std::cmp::Ordering::Equal));
+        models.sort_by(|a, b| {
+            b.1 .1
+                .partial_cmp(&a.1 .1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         for (model, (tokens, cost)) in models {
             println!(
                 "  {}: {} ({} tokens)",
@@ -573,7 +577,10 @@ fn handle_cost_command(ctx: &Context) {
     // Check for warning threshold
     if let Some(threshold) = ctx.config.borrow().cost_tracking.warn_threshold_usd {
         if total_cost > threshold {
-            println!("\n⚠️  Session cost exceeds threshold of {}", format_cost(threshold));
+            println!(
+                "\n⚠️  Session cost exceeds threshold of {}",
+                format_cost(threshold)
+            );
         }
     }
 }

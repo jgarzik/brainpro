@@ -266,10 +266,7 @@ impl PricingTable {
             "qwen3-235b-a22b-instruct-2507".to_string(),
             ModelPricing::new(0.00, 0.00),
         );
-        models.insert(
-            "llama-3.3-70b".to_string(),
-            ModelPricing::new(0.00, 0.00),
-        );
+        models.insert("llama-3.3-70b".to_string(), ModelPricing::new(0.00, 0.00));
 
         // Ollama / local models (no cost)
         models.insert("llama3".to_string(), ModelPricing::new(0.00, 0.00));

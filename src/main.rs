@@ -90,7 +90,11 @@ pub struct Args {
     #[arg(long, help = "Debug output (print HTTP details and settings)")]
     pub debug: bool,
 
-    #[arg(short = 'O', long = "optimize", help = "Optimize output for token efficiency")]
+    #[arg(
+        short = 'O',
+        long = "optimize",
+        help = "Optimize output for token efficiency"
+    )]
     pub optimize: bool,
 }
 

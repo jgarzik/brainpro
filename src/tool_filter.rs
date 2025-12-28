@@ -101,7 +101,11 @@ mod tests {
     #[test]
     fn test_arg_prefix_match() {
         assert!(tool_matches("Bash", "Bash(git:*)", Some("git status")));
-        assert!(tool_matches("Bash", "Bash(git diff:*)", Some("git diff HEAD")));
+        assert!(tool_matches(
+            "Bash",
+            "Bash(git diff:*)",
+            Some("git diff HEAD")
+        ));
         assert!(!tool_matches("Bash", "Bash(git:*)", Some("npm install")));
         assert!(!tool_matches("Bash", "Bash(git:*)", None));
     }
@@ -109,7 +113,11 @@ mod tests {
     #[test]
     fn test_arg_exact_match() {
         assert!(tool_matches("Edit", "Edit(src/lib.rs)", Some("src/lib.rs")));
-        assert!(!tool_matches("Edit", "Edit(src/lib.rs)", Some("src/main.rs")));
+        assert!(!tool_matches(
+            "Edit",
+            "Edit(src/lib.rs)",
+            Some("src/main.rs")
+        ));
     }
 
     #[test]

@@ -500,7 +500,6 @@ impl HookManager {
             }
         }
     }
-
 }
 
 #[cfg(test)]

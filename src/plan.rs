@@ -10,9 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Cached regex for parsing STEP lines in plan output
-static STEP_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
-    regex::Regex::new(r"(?i)STEP\s+(\d+):\s*(.+)").expect("Invalid step regex")
-});
+static STEP_REGEX: Lazy<regex::Regex> =
+    Lazy::new(|| regex::Regex::new(r"(?i)STEP\s+(\d+):\s*(.+)").expect("Invalid step regex"));
 
 // ============================================================================
 // Core Data Structures
