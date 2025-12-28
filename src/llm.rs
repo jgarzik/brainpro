@@ -62,6 +62,11 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
+/// Trait for LLM clients to allow mocking and abstraction
+pub trait LlmClient {
+    fn chat(&self, request: &ChatRequest) -> Result<ChatResponse>;
+}
+
 pub struct Client {
     base_url: String,
     api_key: String,
@@ -76,8 +81,10 @@ impl Client {
             agent: ureq::Agent::new(),
         }
     }
+}
 
-    pub fn chat(&self, request: &ChatRequest) -> Result<ChatResponse> {
+impl LlmClient for Client {
+    fn chat(&self, request: &ChatRequest) -> Result<ChatResponse> {
         let url = format!("{}/chat/completions", self.base_url);
 
         let resp = self

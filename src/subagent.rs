@@ -2,6 +2,7 @@
 
 use crate::agent::CommandStats;
 use crate::config::{AgentSpec, PermissionMode};
+use crate::llm::LlmClient;
 use crate::policy::{Decision, PolicyEngine};
 use crate::{cli::Context, llm, tools};
 use anyhow::Result;

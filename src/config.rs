@@ -95,10 +95,23 @@ pub struct BashConfig {
     pub max_output_bytes: Option<usize>,
 }
 
+/// MCP transport type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpTransport {
+    #[default]
+    Stdio,
+    Http,
+    Sse,
+}
+
 /// Configuration for an MCP server
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
+    /// For stdio: the command to spawn
+    /// For http/sse: not used (use url instead)
+    #[serde(default)]
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
@@ -112,6 +125,12 @@ pub struct McpServerConfig {
     pub auto_start: bool,
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
+    /// Transport type: stdio, http, or sse
+    #[serde(default)]
+    pub transport: McpTransport,
+    /// URL for http/sse transports
+    #[serde(default)]
+    pub url: Option<String>,
 }
 
 fn default_cwd() -> String {

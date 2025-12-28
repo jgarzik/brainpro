@@ -1,9 +1,9 @@
 //! MCP server lifecycle manager.
 
 use super::client::McpClient;
-use super::transport::StdioTransport;
+use super::transport::{HttpTransport, McpTransportImpl, SseTransport, StdioTransport};
 use super::McpToolDef;
-use crate::config::McpServerConfig;
+use crate::config::{McpServerConfig, McpTransport};
 use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -53,6 +53,7 @@ impl McpManager {
     }
 
     /// Connect to an MCP server by name
+    /// Returns (pid_or_0, tool_count) - pid is 0 for HTTP/SSE transports
     pub fn connect(&mut self, name: &str, root: &Path) -> Result<(u32, usize)> {
         // Check if already connected
         if self.clients.contains_key(name) {
@@ -69,14 +70,34 @@ impl McpManager {
             return Err(anyhow::anyhow!("Server {} is disabled", name));
         }
 
-        // Resolve cwd relative to project root
-        let cwd = root.join(&config.cwd);
+        // Create appropriate transport based on config
+        let (transport, pid) = match config.transport {
+            McpTransport::Stdio => {
+                // Resolve cwd relative to project root
+                let cwd = root.join(&config.cwd);
+                let t = StdioTransport::spawn(&config.command, &config.args, &config.env, &cwd)?;
+                let pid = t.pid();
+                (McpTransportImpl::Stdio(t), pid)
+            }
+            McpTransport::Http => {
+                let url = config
+                    .url
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("HTTP transport requires 'url' in config"))?;
+                let t = HttpTransport::new(url, config.timeout_ms);
+                (McpTransportImpl::Http(t), 0)
+            }
+            McpTransport::Sse => {
+                let url = config
+                    .url
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("SSE transport requires 'url' in config"))?;
+                let t = SseTransport::new(url, config.timeout_ms);
+                (McpTransportImpl::Sse(t), 0)
+            }
+        };
 
-        // Spawn transport
-        let transport = StdioTransport::spawn(&config.command, &config.args, &config.env, &cwd)?;
-
-        let pid = transport.pid();
-        let mut client = McpClient::new(transport, config.timeout_ms);
+        let mut client = McpClient::with_transport(transport);
 
         // Initialize connection
         client.initialize()?;

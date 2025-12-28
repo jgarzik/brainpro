@@ -1,6 +1,8 @@
 mod agent;
 mod backend;
 mod cli;
+mod commands;
+mod compact;
 mod config;
 mod cost;
 mod hooks;
@@ -244,6 +246,9 @@ fn main() -> Result<()> {
     let pricing_table = cost::PricingTable::from_config(&cfg.model_pricing);
     let session_costs = cost::SessionCosts::new(session_id.clone(), pricing_table);
 
+    // Build command index
+    let command_index = commands::CommandIndex::build(&root);
+
     let ctx = cli::Context {
         args,
         root,
@@ -262,6 +267,7 @@ fn main() -> Result<()> {
         hooks: RefCell::new(hook_manager),
         session_costs: RefCell::new(session_costs),
         turn_counter: RefCell::new(0),
+        command_index: RefCell::new(command_index),
     };
 
     // Fire SessionStart hook
