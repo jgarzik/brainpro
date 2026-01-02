@@ -5,6 +5,7 @@ mod glob;
 mod grep;
 pub mod mcp_dispatch;
 mod read;
+mod search;
 pub mod task;
 mod write;
 
@@ -34,6 +35,7 @@ pub fn schemas(opts: &SchemaOptions) -> Vec<Value> {
         edit::schema(opts),
         grep::schema(opts),
         glob::schema(opts),
+        search::schema(opts),
         bash::schema(opts),
     ]
 }
@@ -46,6 +48,7 @@ pub fn schemas_with_task(opts: &SchemaOptions) -> Vec<Value> {
         edit::schema(opts),
         grep::schema(opts),
         glob::schema(opts),
+        search::schema(opts),
         bash::schema(opts),
         task::schema(opts),
         activate_skill::schema(opts),
@@ -61,6 +64,7 @@ pub fn execute(name: &str, args: Value, root: &Path, bash_config: &BashConfig) -
         "Edit" => edit::execute(args, root),
         "Grep" => grep::execute(args, root),
         "Glob" => glob::execute(args, root),
+        "Search" => search::execute(args, root),
         "Bash" => bash::execute(args, root, bash_config),
         _ => Ok(
             json!({ "error": { "code": "unknown_tool", "message": format!("Unknown tool: {}", name) } }),

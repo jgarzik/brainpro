@@ -30,7 +30,7 @@ impl ToolCategory {
     /// Determine the category of a tool by name
     pub fn from_tool_name(name: &str) -> Self {
         match name {
-            "Read" | "Grep" | "Glob" => ToolCategory::ReadOnly,
+            "Read" | "Grep" | "Glob" | "Search" => ToolCategory::ReadOnly,
             "Write" | "Edit" => ToolCategory::Mutation,
             "Bash" => ToolCategory::Execution,
             _ if name.starts_with("mcp.") => ToolCategory::Execution, // MCP tools require permission
@@ -82,7 +82,7 @@ impl PolicyEngine {
     /// Extract the primary argument for rule matching from tool args
     /// For Bash: the command string
     /// For Write/Edit/Read: the path
-    /// For Grep/Glob: the pattern
+    /// For Grep/Glob/Search: the pattern
     fn extract_tool_arg(tool: &str, args: &Value) -> Option<String> {
         match tool {
             "Bash" => args
@@ -92,7 +92,7 @@ impl PolicyEngine {
             "Write" | "Edit" | "Read" => {
                 args.get("path").and_then(|v| v.as_str()).map(String::from)
             }
-            "Grep" | "Glob" => args
+            "Grep" | "Glob" | "Search" => args
                 .get("pattern")
                 .and_then(|v| v.as_str())
                 .map(String::from),
