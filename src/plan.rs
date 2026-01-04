@@ -491,7 +491,7 @@ fn extract_field(content: &str, prefix: &str) -> Option<String> {
 pub const PLAN_MODE_SYSTEM_PROMPT: &str = r#"You are in PLAN MODE. Create a detailed, executable implementation plan.
 
 ## Available Tools
-You have READ-ONLY access: Read, Grep, Glob
+You have READ-ONLY access: Read, Glob, Search
 Use these to explore the codebase and understand existing patterns.
 
 ## Plan Structure

@@ -127,7 +127,7 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
                     .and_then(|f| f.get("name"))
                     .and_then(|n| n.as_str())
                 {
-                    matches!(name, "Read" | "Grep" | "Glob")
+                    matches!(name, "Read" | "Glob" | "Search")
                 } else {
                     false
                 }
