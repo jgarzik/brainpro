@@ -66,7 +66,6 @@ pub fn execute(args: Value, root: &Path) -> anyhow::Result<Value> {
     }
 
     let lines_written = content.lines().count();
-    eprintln!("Wrote {} lines", lines_written);
 
     Ok(json!({
         "path": path,

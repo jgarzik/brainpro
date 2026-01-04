@@ -112,7 +112,6 @@ pub fn execute(args: Value, root: &Path) -> anyhow::Result<Value> {
     }
 
     let match_count = matches.len();
-    eprintln!("Found {} lines", match_count);
 
     Ok(json!({
         "matches": matches,

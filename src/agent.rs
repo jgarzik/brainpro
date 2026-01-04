@@ -5,6 +5,7 @@ use crate::{
     llm::{self, LlmClient},
     plan::{self, PlanPhase},
     policy::Decision,
+    tool_display,
     tools,
 };
 use anyhow::Result;
@@ -363,6 +364,9 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
                 &format!("Tool call: {}({})", name, tc.function.arguments),
             );
 
+            // Display tool call
+            eprintln!("{}", tool_display::format_tool_call(name, &args));
+
             let _ = ctx.transcript.borrow_mut().tool_call(name, &args);
 
             // Use PolicyEngine for permission decisions
@@ -534,6 +538,9 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
             );
 
             verbose(ctx, &format!("Tool result: {} ok={}", name, ok));
+
+            // Display tool result
+            eprintln!("{}", tool_display::format_tool_result(name, &result));
 
             messages.push(json!({
                 "role": "tool",

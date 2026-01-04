@@ -166,7 +166,6 @@ fn search_files_with_matches(
     }
 
     let count = paths.len();
-    eprintln!("Found {} files", count);
 
     Ok(json!({
         "paths": paths,
@@ -250,7 +249,6 @@ fn search_content(
     }
 
     let count = matches.len();
-    eprintln!("Found {} matches", count);
 
     Ok(json!({
         "matches": matches,
@@ -310,8 +308,6 @@ fn search_count(
             total_count += file_count;
         }
     }
-
-    eprintln!("Found {} matches in {} files", total_count, by_file.len());
 
     Ok(json!({
         "count": total_count,

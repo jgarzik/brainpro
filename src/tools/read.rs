@@ -73,8 +73,6 @@ pub fn execute(args: Value, root: &Path) -> anyhow::Result<Value> {
         ),
     };
 
-    eprintln!("Read {} lines", lines_read);
-
     let mut result = json!({
         "path": path,
         "offset": offset,

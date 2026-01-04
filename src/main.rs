@@ -13,6 +13,7 @@ mod plan;
 mod policy;
 mod skillpacks;
 mod subagent;
+mod tool_display;
 mod tool_filter;
 mod tools;
 mod transcript;
