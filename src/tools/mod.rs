@@ -1,12 +1,15 @@
 pub mod activate_skill;
+pub mod ask_user;
 pub mod bash;
 pub mod edit;
 mod glob;
 mod grep;
 pub mod mcp_dispatch;
+pub mod plan_mode;
 mod read;
 mod search;
 pub mod task;
+pub mod todo;
 mod write;
 
 use crate::config::BashConfig;
@@ -52,6 +55,10 @@ pub fn schemas_with_task(opts: &SchemaOptions) -> Vec<Value> {
         bash::schema(opts),
         task::schema(opts),
         activate_skill::schema(opts),
+        todo::schema(opts),
+        ask_user::schema(opts),
+        plan_mode::enter_schema(opts),
+        plan_mode::exit_schema(opts),
     ]
 }
 

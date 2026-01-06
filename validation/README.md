@@ -70,8 +70,9 @@ This framework validates `yo` functionality by testing **outcomes** rather than 
 | 15-multi-file | Cross-file changes | 3 | ~$0.12 |
 | 16-review | Code review | 3 | ~$0.08 |
 | 17-mcp | MCP integration | 2 | ~$0.05 |
+| 18-new-tools | TodoWrite, Session, PlanMode | 3 | ~$0.08 |
 
-**Total estimated cost: ~$1.20 per full run** (51 tests)
+**Total estimated cost: ~$1.30 per full run** (54 tests)
 
 ## Test Priority
 

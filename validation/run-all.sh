@@ -39,6 +39,7 @@ CATEGORIES=(
     "15-multi-file"
     "16-review"
     "17-mcp"
+    "18-new-tools"
 )
 
 # Option to run specific category

@@ -41,6 +41,15 @@ pub struct TurnResult {
     /// If true, a Stop hook requested continuation with the given prompt
     pub force_continue: bool,
     pub continue_prompt: Option<String>,
+    /// If set, agent is waiting for user to answer questions
+    pub pending_question: Option<PendingQuestion>,
+}
+
+/// Pending question that needs user input before continuing
+#[derive(Debug, Clone)]
+pub struct PendingQuestion {
+    pub tool_call_id: String,
+    pub questions: Vec<tools::ask_user::Question>,
 }
 
 const SYSTEM_PROMPT: &str = r#"You are an agentic coding assistant running locally.
@@ -63,7 +72,7 @@ fn verbose(ctx: &Context, message: &str) {
 }
 
 pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> Result<TurnResult> {
-    let mut result = TurnResult::default();
+    let mut turn_result = TurnResult::default();
     let _ = ctx.transcript.borrow_mut().user_message(user_input);
 
     messages.push(json!({
@@ -233,8 +242,8 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
 
         // Track token usage from this LLM call
         if let Some(usage) = &response.usage {
-            result.stats.input_tokens += usage.prompt_tokens;
-            result.stats.output_tokens += usage.completion_tokens;
+            turn_result.stats.input_tokens += usage.prompt_tokens;
+            turn_result.stats.output_tokens += usage.completion_tokens;
 
             // Record cost for this operation
             let turn_number = *ctx.turn_counter.borrow();
@@ -346,7 +355,7 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
             let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or(json!({}));
 
             // Count this tool use
-            result.stats.tool_uses += 1;
+            turn_result.stats.tool_uses += 1;
 
             trace(
                 ctx,
@@ -450,7 +459,7 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
                 } else if name == "Task" {
                     // Execute Task tool (subagent delegation)
                     let (task_result, sub_stats) = tools::task::execute(args.clone(), ctx)?;
-                    result.stats.merge(&sub_stats);
+                    turn_result.stats.merge(&sub_stats);
                     task_result
                 } else if name.starts_with("mcp.") {
                     // Execute MCP tool
@@ -505,6 +514,33 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
                             json!({ "error": { "code": "mcp_error", "message": e.to_string() } })
                         }
                     }
+                } else if name == "TodoWrite" {
+                    // Execute TodoWrite tool
+                    tools::todo::execute(args.clone(), &ctx.todo_state)
+                } else if name == "AskUserQuestion" {
+                    // Validate questions and signal that we need user input
+                    match tools::ask_user::validate(&args) {
+                        Ok(questions) => {
+                            // Set pending question and break out after this tool call
+                            turn_result.pending_question = Some(PendingQuestion {
+                                tool_call_id: tc.id.clone(),
+                                questions,
+                            });
+                            // Return a placeholder - the actual result will be injected later
+                            json!({
+                                "status": "awaiting_user_input",
+                                "message": "Waiting for user to answer questions"
+                            })
+                        }
+                        Err(error) => error,
+                    }
+                } else if name == "EnterPlanMode" {
+                    // Enter plan mode
+                    let goal = args.get("goal").and_then(|g| g.as_str()).unwrap_or("");
+                    tools::plan_mode::execute_enter(&ctx.plan_mode, goal)
+                } else if name == "ExitPlanMode" {
+                    // Exit plan mode
+                    tools::plan_mode::execute_exit(&ctx.plan_mode)
                 } else {
                     // Execute built-in tool
                     tools::execute(name, args.clone(), &ctx.root, &bash_config)?
@@ -546,10 +582,20 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
                 "tool_call_id": tc.id,
                 "content": serde_json::to_string(&result)?
             }));
+
+            // If we have a pending question, break out of both loops
+            if turn_result.pending_question.is_some() {
+                break;
+            }
+        }
+
+        // If we have a pending question, break out of the iteration loop
+        if turn_result.pending_question.is_some() {
+            break;
         }
     }
 
-    // Run Stop hooks - may request continuation
+    // Run Stop hooks - may request continuation (skip if waiting for user input)
     let last_assistant_message = messages.iter().rev().find_map(|m| {
         if m["role"].as_str() == Some("assistant") {
             m["content"].as_str().map(|s| s.to_string())
@@ -564,13 +610,14 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
         .on_stop("end_turn", last_assistant_message.as_deref());
 
     // If force_continue is requested, signal to caller to run another turn
-    if force_continue {
+    // (but not if we're waiting for user input)
+    if force_continue && turn_result.pending_question.is_none() {
         if let Some(prompt) = continue_prompt {
-            result.force_continue = true;
-            result.continue_prompt = Some(prompt);
+            turn_result.force_continue = true;
+            turn_result.continue_prompt = Some(prompt);
             verbose(ctx, "Stop hook requested continuation");
         }
     }
 
-    Ok(result)
+    Ok(turn_result)
 }

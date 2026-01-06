@@ -12,7 +12,9 @@ use crate::{
     model_routing::ModelRouter,
     plan::{self, PlanModeState},
     policy::PolicyEngine,
+    session,
     skillpacks::{ActiveSkills, SkillIndex},
+    tools::{ask_user, todo::TodoState},
     transcript::Transcript,
     Args,
 };
@@ -52,6 +54,8 @@ pub struct Context {
     pub turn_counter: RefCell<u32>,
     // Slash commands
     pub command_index: RefCell<CommandIndex>,
+    // Todo list for task tracking
+    pub todo_state: RefCell<TodoState>,
 }
 
 /// Print command stats to stderr
@@ -98,15 +102,47 @@ pub fn run_once(ctx: &Context, prompt: &str) -> Result<()> {
 
     let start = Instant::now();
     let mut messages = Vec::new();
+    let mut rl = DefaultEditor::new()?;
     let result = agent::run_turn(ctx, prompt, &mut messages)?;
 
-    // Handle force_continue - run another turn if requested
     let mut total_stats = result.stats.clone();
-    if result.force_continue {
-        if let Some(continue_prompt) = result.continue_prompt {
+    let mut current_result = result;
+
+    // Handle pending questions - loop until all questions are answered
+    while let Some(pending) = current_result.pending_question.take() {
+        match ask_user::display_and_collect(&pending.questions, &mut rl) {
+            Ok(answers) => {
+                messages.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": pending.tool_call_id,
+                    "content": serde_json::to_string(&answers).unwrap_or_default()
+                }));
+
+                current_result = agent::run_turn(ctx, "[User answered questions above]", &mut messages)?;
+                total_stats.merge(&current_result.stats);
+            }
+            Err(e) => {
+                eprintln!("Input error: {}", e);
+                messages.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": pending.tool_call_id,
+                    "content": serde_json::to_string(&serde_json::json!({
+                        "error": { "code": "input_cancelled", "message": e }
+                    })).unwrap_or_default()
+                }));
+                break;
+            }
+        }
+    }
+
+    // Handle force_continue - loop until no more continuations requested
+    while current_result.force_continue {
+        if let Some(continue_prompt) = current_result.continue_prompt.take() {
             println!("[Continuing due to Stop hook...]");
-            let continuation = agent::run_turn(ctx, &continue_prompt, &mut messages)?;
-            total_stats.merge(&continuation.stats);
+            current_result = agent::run_turn(ctx, &continue_prompt, &mut messages)?;
+            total_stats.merge(&current_result.stats);
+        } else {
+            break;
         }
     }
 
@@ -126,9 +162,13 @@ pub fn run_once(ctx: &Context, prompt: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn run_repl(ctx: Context) -> Result<()> {
+pub fn run_repl(ctx: Context, initial_messages: Option<Vec<serde_json::Value>>) -> Result<()> {
     let mut rl = DefaultEditor::new()?;
-    let mut messages = Vec::new();
+    let mut messages = initial_messages.unwrap_or_default();
+
+    if !messages.is_empty() {
+        eprintln!("Resumed session with {} messages", messages.len());
+    }
 
     // Load command history
     let history_file = history_path();
@@ -170,16 +210,64 @@ pub fn run_repl(ctx: Context) -> Result<()> {
                 let start = Instant::now();
                 match agent::run_turn(&ctx, &line, &mut messages) {
                     Ok(result) => {
-                        // Handle force_continue - run another turn if requested
                         let mut total_stats = result.stats.clone();
-                        if result.force_continue {
-                            if let Some(continue_prompt) = result.continue_prompt {
-                                println!("[Continuing due to Stop hook...]");
-                                if let Ok(continuation) =
-                                    agent::run_turn(&ctx, &continue_prompt, &mut messages)
-                                {
-                                    total_stats.merge(&continuation.stats);
+                        let mut current_result = result;
+
+                        // Handle pending questions - loop until all questions are answered
+                        while let Some(pending) = current_result.pending_question.take() {
+                            // Display questions and collect answers
+                            match ask_user::display_and_collect(&pending.questions, &mut rl) {
+                                Ok(answers) => {
+                                    // Inject the answer as a tool result
+                                    messages.push(serde_json::json!({
+                                        "role": "tool",
+                                        "tool_call_id": pending.tool_call_id,
+                                        "content": serde_json::to_string(&answers).unwrap_or_default()
+                                    }));
+
+                                    // Continue the agent with the answers
+                                    match agent::run_turn(&ctx, "[User answered questions above]", &mut messages) {
+                                        Ok(continuation) => {
+                                            total_stats.merge(&continuation.stats);
+                                            current_result = continuation;
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Continuation error: {}", e);
+                                            break;
+                                        }
+                                    }
                                 }
+                                Err(e) => {
+                                    eprintln!("Input error: {}", e);
+                                    // Push an error result so agent knows the question failed
+                                    messages.push(serde_json::json!({
+                                        "role": "tool",
+                                        "tool_call_id": pending.tool_call_id,
+                                        "content": serde_json::to_string(&serde_json::json!({
+                                            "error": { "code": "input_cancelled", "message": e }
+                                        })).unwrap_or_default()
+                                    }));
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Handle force_continue - loop until no more continuations requested
+                        while current_result.force_continue {
+                            if let Some(continue_prompt) = current_result.continue_prompt.take() {
+                                println!("[Continuing due to Stop hook...]");
+                                match agent::run_turn(&ctx, &continue_prompt, &mut messages) {
+                                    Ok(continuation) => {
+                                        total_stats.merge(&continuation.stats);
+                                        current_result = continuation;
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Continuation error: {}", e);
+                                        break;
+                                    }
+                                }
+                            } else {
+                                break;
                             }
                         }
 
@@ -214,6 +302,12 @@ pub fn run_repl(ctx: Context) -> Result<()> {
         let _ = std::fs::create_dir_all(parent);
     }
     let _ = rl.save_history(&history_file);
+
+    // Save session if there are messages
+    if !messages.is_empty() {
+        let turn_count = *ctx.turn_counter.borrow();
+        let _ = session::save_session(&ctx.session_id, &messages, turn_count);
+    }
 
     Ok(())
 }

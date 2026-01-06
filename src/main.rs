@@ -11,6 +11,7 @@ mod mcp;
 mod model_routing;
 mod plan;
 mod policy;
+mod session;
 mod skillpacks;
 mod subagent;
 mod tool_display;
@@ -100,6 +101,9 @@ pub struct Args {
         help = "Optimize output for token efficiency"
     )]
     pub optimize: bool,
+
+    #[arg(long, help = "Resume a previous session by ID")]
+    pub resume: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -273,6 +277,7 @@ fn main() -> Result<()> {
         session_costs: RefCell::new(session_costs),
         turn_counter: RefCell::new(0),
         command_index: RefCell::new(command_index),
+        todo_state: RefCell::new(tools::todo::TodoState::new()),
     };
 
     // Fire SessionStart hook
@@ -286,6 +291,22 @@ fn main() -> Result<()> {
     if let Some(prompt) = &ctx.args.prompt {
         cli::run_once(&ctx, prompt)
     } else {
-        cli::run_repl(ctx)
+        // Handle session resume
+        let initial_messages = if let Some(resume_id) = &ctx.args.resume {
+            match session::load_session(resume_id) {
+                Ok(saved) => {
+                    // Update turn counter from saved session
+                    *ctx.turn_counter.borrow_mut() = saved.turn_count;
+                    Some(saved.messages)
+                }
+                Err(e) => {
+                    eprintln!("Failed to load session '{}': {}", resume_id, e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        cli::run_repl(ctx, initial_messages)
     }
 }
