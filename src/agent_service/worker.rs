@@ -173,6 +173,11 @@ fn run_turn_task(
     // Run the agent turn
     match crate::agent::run_turn(&ctx, &user_input, &mut messages) {
         Ok(result) => {
+            // Send content event if there's response text
+            if let Some(text) = &result.response_text {
+                let _ = event_tx.send(AgentEvent::content(id, text));
+            }
+
             // Check for pending questions
             if let Some(pending) = result.pending_question {
                 let questions: Vec<Value> = pending

@@ -43,6 +43,8 @@ pub struct TurnResult {
     pub continue_prompt: Option<String>,
     /// If set, agent is waiting for user to answer questions
     pub pending_question: Option<PendingQuestion>,
+    /// Collected response text from the assistant
+    pub response_text: Option<String>,
 }
 
 /// Pending question that needs user input before continuing
@@ -73,6 +75,7 @@ fn verbose(ctx: &Context, message: &str) {
 
 pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> Result<TurnResult> {
     let mut turn_result = TurnResult::default();
+    let mut collected_response = String::new();
     let _ = ctx.transcript.borrow_mut().user_message(user_input);
 
     messages.push(json!({
@@ -270,6 +273,10 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
         if let Some(content) = &msg.content {
             if !content.is_empty() {
                 println!("{}", content);
+                if !collected_response.is_empty() {
+                    collected_response.push_str("\n\n");
+                }
+                collected_response.push_str(content);
                 let _ = ctx.transcript.borrow_mut().assistant_message(content);
 
                 // In planning mode, try to parse the output for a plan
@@ -553,6 +560,11 @@ pub fn run_turn(ctx: &Context, user_input: &str, messages: &mut Vec<Value>) -> R
             turn_result.continue_prompt = Some(prompt);
             verbose(ctx, "Stop hook requested continuation");
         }
+    }
+
+    // Store collected response text
+    if !collected_response.is_empty() {
+        turn_result.response_text = Some(collected_response);
     }
 
     Ok(turn_result)
