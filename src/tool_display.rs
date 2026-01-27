@@ -1,6 +1,6 @@
 //! Tool display formatting for nice CLI output.
 //!
-//! Formats tool calls and results similar to Claude Code's output style:
+//! Formats tool calls and results for terminal display:
 //! ```text
 //! ⏺ Read(path: "src/main.rs")
 //!   ⎿  Read 40 lines

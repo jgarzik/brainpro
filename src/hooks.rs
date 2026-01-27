@@ -1,6 +1,6 @@
 //! Hook system for executing shell commands at lifecycle points.
 //!
-//! Implements Claude Code-compatible hooks with JSON input/output via stdin/stdout.
+//! Hooks receive JSON input via stdin and return JSON output via stdout.
 //! Exit codes: 0 = allow, 2 = block, other = warn (continue with warning).
 
 use crate::config::{HookConfig, HookEvent};

@@ -1,6 +1,6 @@
 # brainpro Manual Validation Framework
 
-A comprehensive manual validation suite for testing `brainpro` against common Claude Code usage patterns.
+A comprehensive manual validation suite for testing `brainpro` functionality.
 
 ## Overview
 

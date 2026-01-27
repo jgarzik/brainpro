@@ -26,7 +26,7 @@ pub enum PermissionMode {
     BypassPermissions,
 }
 
-/// Hook event types (Claude Code compatible)
+/// Hook event types for lifecycle callbacks
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum HookEvent {
     PreToolUse,

@@ -15,7 +15,7 @@ Not production yet.  Currently undergoing heavy development and testing.  Contri
 - **Built-in tools** - Read, Write, Edit, Grep, Glob, Bash
 - **MCP integration** - Connect external tool servers via Model Context Protocol
 - **Subagents** - Delegate tasks to specialized agents with restricted tools
-- **Skill Packs** - Reusable instruction sets with tool restrictions (Claude Code compatible)
+- **Skill Packs** - Reusable instruction sets with tool restrictions
 - **Model Routing** - Automatic model selection based on task type
 - **Permission system** - Granular allow/ask/deny rules for tool access
 - **Session transcripts** - JSONL audit logs of all interactions
@@ -217,7 +217,7 @@ The main agent can delegate using the `Task` tool:
 
 ## Skill Packs
 
-Skill packs are reusable instruction sets that guide the agent for specific tasks. They use the Claude Code compatible SKILL.md format with YAML frontmatter.
+Skill packs are reusable instruction sets that guide the agent for specific tasks. They use SKILL.md files with YAML frontmatter for metadata.
 
 ### SKILL.md Format
 
@@ -415,3 +415,9 @@ Sessions logged to `.brainpro/sessions/<uuid>.jsonl` with events:
 - Skill pack lifecycle (index built, activate, deactivate, parse errors)
 - MCP server lifecycle
 - Errors and metadata
+
+## Inspired By
+
+- [Claude Code](https://github.com/anthropics/claude-code)
+- [opencode](https://github.com/opencode-ai/opencode)
+- [clawdbot](https://github.com/crjaensch/clawdbot)

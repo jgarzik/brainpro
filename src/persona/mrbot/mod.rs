@@ -4,7 +4,7 @@
 //! - Gateway/daemon architecture (yield/resume)
 //! - Full toolset including messaging/voice (future)
 //! - Persona loaded from config/persona/mrbot/
-//! - Modular prompt builder (clawdbot-style)
+//! - Modular prompt builder with section-based assembly
 
 mod loop_impl;
 
