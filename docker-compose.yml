@@ -3,16 +3,40 @@ services:
     build: .
     container_name: brainpro
     restart: unless-stopped
+    read_only: true
     ports:
       - "18789:18789"
     volumes:
       - brainpro-data:/app/data
       - brainpro-logs:/app/logs
       - ./fixtures:/app/fixtures:ro
-    working_dir: /app
+      - ./workspace:/app/workspace
+    tmpfs:
+      - /run:mode=1777,size=10M
+      - /var/run:mode=1777,size=1M
+      - /var/log/supervisor:mode=1777,size=10M
+      - /tmp:mode=1777,size=100M
+      - /app/scratch:mode=1777,size=50M
+    working_dir: /app/workspace
     environment:
       - BRAINPRO_DATA_DIR=/app/data
+      - HOME=/app/data
+    secrets:
+      - venice_api_key
+      - openai_api_key
+      - anthropic_api_key
+      - brainpro_gateway_token
 
 volumes:
   brainpro-data:
   brainpro-logs:
+
+secrets:
+  venice_api_key:
+    file: ./secrets/venice_api_key.txt
+  openai_api_key:
+    file: ./secrets/openai_api_key.txt
+  anthropic_api_key:
+    file: ./secrets/anthropic_api_key.txt
+  brainpro_gateway_token:
+    file: ./secrets/brainpro_gateway_token.txt

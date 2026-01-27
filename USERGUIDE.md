@@ -133,6 +133,45 @@ This starts:
 
 Connect via WebSocket at `ws://localhost:18789`.
 
+### Container Storage Model
+
+The container uses a read-only filesystem with specific writable mount points:
+
+| Path | Type | Purpose |
+|------|------|---------|
+| `/app/workspace` | bind mount | User project files (Write tool operates here) |
+| `/app/data` | named volume | Sessions, plans, local config |
+| `/app/data/.brainpro` | named volume | metrics.json, yo_history |
+| `/app/logs` | named volume | Application logs |
+| `/run` | tmpfs | Unix sockets (brainpro.sock) |
+| `/var/run` | tmpfs | supervisor.sock |
+| `/var/log/supervisor` | tmpfs | Supervisor logs |
+| `/app/scratch` | tmpfs | Temporary validation files |
+
+**Workspace Binding**: Mount your project directory to `/app/workspace`:
+
+```yaml
+volumes:
+  - ./my-project:/app/workspace
+```
+
+The container's `working_dir` is `/app/workspace`, so all file operations happen relative to your mounted project.
+
+**Secrets**: API keys are loaded via Docker secrets (12-factor pattern):
+
+```yaml
+secrets:
+  anthropic_api_key:
+    file: ./secrets/anthropic_api_key.txt
+
+services:
+  brainpro:
+    secrets:
+      - anthropic_api_key
+```
+
+The entrypoint exports secrets as environment variables - no file mutation required.
+
 ### Environment Variables
 
 | Variable | Description |

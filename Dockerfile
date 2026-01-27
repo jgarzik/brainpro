@@ -47,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /run /var/log/supervisor /app/data /app/logs \
+    && mkdir -p /run /var/log/supervisor /app/data /app/logs /app/workspace /app/scratch /app/data/.brainpro \
     && chown -R brainpro:brainpro /app /run /var/log/supervisor
 
 # Copy binaries from builder

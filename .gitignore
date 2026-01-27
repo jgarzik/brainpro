@@ -4,5 +4,6 @@
 target/
 fixtures/scratch/
 validation/results/
-secrets/
-
+secrets/*.txt
+workspace/*
+!workspace/.gitkeep
