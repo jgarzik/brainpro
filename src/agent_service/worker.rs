@@ -67,7 +67,18 @@ fn run_turn_task(
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     // Load config
-    let cfg = Config::load().map_err(|e| format!("Config load failed: {}", e))?;
+    let mut cfg = Config::load().map_err(|e| format!("Config load failed: {}", e))?;
+
+    // Apply default target based on available API keys (same logic as main.rs)
+    if cfg.default_target.is_none() {
+        if std::env::var("VENICE_API_KEY").is_ok() || std::env::var("venice_api_key").is_ok() {
+            cfg.default_target = Some("qwen3-235b-a22b-instruct-2507@venice".to_string());
+        } else if std::env::var("OPENAI_API_KEY").is_ok() {
+            cfg.default_target = Some("gpt-4o-mini@chatgpt".to_string());
+        } else if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+            cfg.default_target = Some("claude-3-5-sonnet-latest@claude".to_string());
+        }
+    }
 
     // Parse target
     let target = request
@@ -80,7 +91,7 @@ fn run_turn_task(
         let _ = event_tx.send(AgentEvent::error(
             id,
             "no_target",
-            "No target configured and none provided",
+            "No target configured and none provided. Set VENICE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY.",
         ));
         return Ok(());
     }

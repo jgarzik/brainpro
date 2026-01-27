@@ -7,6 +7,7 @@ mod compact;
 mod config;
 mod cost;
 mod gateway;
+mod gateway_client;
 mod hooks;
 mod llm;
 mod model_routing;
@@ -31,6 +32,11 @@ use std::path::PathBuf;
 fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     let args = Args::parse();
+
+    // Gateway client mode: connect to remote gateway instead of running locally
+    if let Some(gateway_url) = &args.gateway {
+        return gateway_client::run_gateway_mode(gateway_url, args.prompt.as_deref());
+    }
 
     // Load configuration (includes built-in backends)
     let mut cfg = if let Some(config_path) = &args.config {
