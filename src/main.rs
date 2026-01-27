@@ -1,15 +1,18 @@
 mod agent;
+mod agent_service;
 mod backend;
 mod cli;
 mod commands;
 mod compact;
 mod config;
 mod cost;
+mod gateway;
 mod hooks;
 mod llm;
 mod model_routing;
 mod plan;
 mod policy;
+mod protocol;
 mod session;
 mod skillpacks;
 mod subagent;
@@ -21,89 +24,9 @@ mod vendors;
 
 use anyhow::Result;
 use clap::Parser;
+use cli::Args;
 use std::cell::RefCell;
 use std::path::PathBuf;
-
-#[derive(Parser)]
-#[command(name = "brainpro", about = "An agentic coding assistant")]
-pub struct Args {
-    #[arg(short, long, help = "One-shot prompt mode")]
-    pub prompt: Option<String>,
-
-    #[arg(long, help = "API key (overrides env vars)")]
-    pub api_key: Option<String>,
-
-    #[arg(
-        long,
-        env = "OPENAI_BASE_URL",
-        default_value = "https://api.venice.ai/api/v1"
-    )]
-    pub base_url: String,
-
-    #[arg(
-        long,
-        env = "OPENAI_MODEL",
-        default_value = "qwen3-235b-a22b-instruct-2507"
-    )]
-    pub model: String,
-
-    #[arg(long, help = "Auto-approve mutations in -p mode")]
-    pub yes: bool,
-
-    #[arg(long, help = "Session transcripts directory")]
-    pub transcripts_dir: Option<PathBuf>,
-
-    #[arg(long, help = "Enable tracing of tool calls and thinking")]
-    pub trace: bool,
-
-    #[arg(long, help = "Config file path")]
-    pub config: Option<PathBuf>,
-
-    #[arg(long, help = "Override default target (e.g., gpt-4@chatgpt)")]
-    pub target: Option<String>,
-
-    #[arg(long, help = "List all configured targets and exit")]
-    pub list_targets: bool,
-
-    #[arg(
-        long,
-        value_name = "MODE",
-        help = "Permission mode: default, acceptEdits, bypassPermissions"
-    )]
-    pub mode: Option<String>,
-
-    #[arg(long = "allowed-tools", value_name = "RULE", action = clap::ArgAction::Append, help = "Allow tool pattern (e.g., 'Bash(cargo test:*)')")]
-    pub allowed_tools: Vec<String>,
-
-    #[arg(long = "disallowed-tools", value_name = "RULE", action = clap::ArgAction::Append, help = "Deny tool pattern")]
-    pub disallowed_tools: Vec<String>,
-
-    #[arg(long = "ask-tools", value_name = "RULE", action = clap::ArgAction::Append, help = "Always prompt for tool pattern")]
-    pub ask_tools: Vec<String>,
-
-    #[arg(
-        long = "max-turns",
-        value_name = "N",
-        help = "Maximum agent iterations per turn (default: 12)"
-    )]
-    pub max_turns: Option<usize>,
-
-    #[arg(long, help = "Verbose output (print tool calls)")]
-    pub verbose: bool,
-
-    #[arg(long, help = "Debug output (print HTTP details and settings)")]
-    pub debug: bool,
-
-    #[arg(
-        short = 'O',
-        long = "optimize",
-        help = "Optimize output for token efficiency"
-    )]
-    pub optimize: bool,
-
-    #[arg(long, help = "Resume a previous session by ID")]
-    pub resume: Option<String>,
-}
 
 fn main() -> Result<()> {
     dotenvy::dotenv().ok();

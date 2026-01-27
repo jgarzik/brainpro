@@ -7,7 +7,21 @@ edition = "2021"
 name = "brainpro"
 path = "src/main.rs"
 
+[[bin]]
+name = "brainpro-gateway"
+path = "src/bin/gateway.rs"
+
+[[bin]]
+name = "brainpro-agent"
+path = "src/bin/agent_daemon.rs"
+
 [dependencies]
+tokio = { version = "1", features = ["full", "net"] }
+tokio-tungstenite = "0.24"
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+futures-util = "0.3"
+dashmap = "6"
 anyhow = "1"
 base64 = "0.22"
 diffy = "0.4"
