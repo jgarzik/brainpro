@@ -5,5 +5,5 @@ target/
 fixtures/scratch/
 validation/results/
 secrets/*.txt
-workspace/*
-!workspace/.gitkeep
+workspace/
+docker-compose.override.yml
