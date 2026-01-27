@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   brainpro:
     build: .
@@ -10,21 +8,11 @@ services:
     volumes:
       - brainpro-data:/app/data
       - brainpro-logs:/app/logs
-    secrets:
-      - venice_api_key
-      - openai_api_key
-      - anthropic_api_key
+      - ./fixtures:/app/fixtures:ro
+    working_dir: /app
     environment:
       - BRAINPRO_DATA_DIR=/app/data
 
 volumes:
   brainpro-data:
   brainpro-logs:
-
-secrets:
-  venice_api_key:
-    file: ./secrets/venice_api_key.txt
-  openai_api_key:
-    file: ./secrets/openai_api_key.txt
-  anthropic_api_key:
-    file: ./secrets/anthropic_api_key.txt

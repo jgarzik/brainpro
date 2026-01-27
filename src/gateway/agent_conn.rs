@@ -106,6 +106,7 @@ fn send_request_blocking(
                     &event.event,
                     crate::protocol::internal::AgentEventType::Done { .. }
                         | crate::protocol::internal::AgentEventType::Error { .. }
+                        | crate::protocol::internal::AgentEventType::Yield { .. }
                 );
 
                 if tx.send(event).is_err() {

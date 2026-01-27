@@ -9,6 +9,9 @@ BRAINPRO_BIN="${PROJECT_ROOT}/target/release/brainpro"
 FIXTURES_DIR="${PROJECT_ROOT}/fixtures"
 SCRATCH_DIR="${FIXTURES_DIR}/scratch"
 
+# Gateway URL (set by run-all.sh when using Docker mode)
+BRAINPRO_GATEWAY_URL="${BRAINPRO_GATEWAY_URL:-}"
+
 # Results tracking
 RESULTS_DIR="${VALIDATION_DIR}/results/$(date +%Y-%m-%d-%H%M%S)"
 CURRENT_TEST=""
@@ -42,12 +45,16 @@ run_brainpro_oneshot() {
     shift
     local args=("$@")
 
-    echo "Command: $BRAINPRO_BIN -p \"$prompt\" --yes ${args[*]}" >> "$TEST_LOG"
-
     # Run brainpro and capture both stdout and stderr
     # Always use --yes to auto-approve for testing
     local output
-    output=$("$BRAINPRO_BIN" -p "$prompt" --yes "${args[@]}" 2>&1)
+    if [ -n "$BRAINPRO_GATEWAY_URL" ]; then
+        echo "Command: $BRAINPRO_BIN --gateway $BRAINPRO_GATEWAY_URL -p \"$prompt\" --yes ${args[*]}" >> "$TEST_LOG"
+        output=$("$BRAINPRO_BIN" --gateway "$BRAINPRO_GATEWAY_URL" -p "$prompt" --yes "${args[@]}" 2>&1)
+    else
+        echo "Command: $BRAINPRO_BIN -p \"$prompt\" --yes ${args[*]}" >> "$TEST_LOG"
+        output=$("$BRAINPRO_BIN" -p "$prompt" --yes "${args[@]}" 2>&1)
+    fi
     local exit_code=$?
 
     echo "Exit code: $exit_code" >> "$TEST_LOG"
@@ -70,10 +77,15 @@ run_brainpro_repl() {
 
     echo "REPL Commands:" >> "$TEST_LOG"
     echo "$commands" >> "$TEST_LOG"
-    echo "Command: $BRAINPRO_BIN --yes" >> "$TEST_LOG"
 
     local output
-    output=$(echo "$commands" | "$BRAINPRO_BIN" --yes 2>&1)
+    if [ -n "$BRAINPRO_GATEWAY_URL" ]; then
+        echo "Command: $BRAINPRO_BIN --gateway $BRAINPRO_GATEWAY_URL --yes (REPL)" >> "$TEST_LOG"
+        output=$(echo "$commands" | "$BRAINPRO_BIN" --gateway "$BRAINPRO_GATEWAY_URL" --yes 2>&1)
+    else
+        echo "Command: $BRAINPRO_BIN --yes (REPL)" >> "$TEST_LOG"
+        output=$(echo "$commands" | "$BRAINPRO_BIN" --yes 2>&1)
+    fi
     local exit_code=$?
 
     echo "Exit code: $exit_code" >> "$TEST_LOG"
@@ -169,12 +181,21 @@ check_brainpro_binary() {
     fi
 }
 
-# Check if API key is set
+# Check if API key is set (env var or secrets file)
 check_api_key() {
-    if [ -z "$VENICE_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ]; then
-        echo -e "${YELLOW}WARNING${NC}: No API key found (VENICE_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY)"
-        echo "Tests may fail without an API key"
+    local secrets_dir="${PROJECT_ROOT}/secrets"
+    # Check environment variables
+    if [ -n "$VENICE_API_KEY" ] || [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$OPENAI_API_KEY" ]; then
+        return 0
     fi
+    # Check secrets files
+    if [ -s "$secrets_dir/venice_api_key.txt" ] || \
+       [ -s "$secrets_dir/anthropic_api_key.txt" ] || \
+       [ -s "$secrets_dir/openai_api_key.txt" ]; then
+        return 0
+    fi
+    echo -e "${YELLOW}WARNING${NC}: No API key found (VENICE_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY)"
+    echo "Tests may fail without an API key"
 }
 
 # Mock webapp fixture directory
@@ -213,10 +234,14 @@ run_brainpro_in_mock_webapp() {
     shift
     local args=("$@")
 
-    echo "Command: cd $MOCK_WEBAPP_SCRATCH && $BRAINPRO_BIN -p \"$prompt\" --yes ${args[*]}" >> "$TEST_LOG"
-
     local output
-    output=$(cd "$MOCK_WEBAPP_SCRATCH" && "$BRAINPRO_BIN" -p "$prompt" --yes "${args[@]}" 2>&1)
+    if [ -n "$BRAINPRO_GATEWAY_URL" ]; then
+        echo "Command: cd $MOCK_WEBAPP_SCRATCH && $BRAINPRO_BIN --gateway $BRAINPRO_GATEWAY_URL -p \"$prompt\" --yes ${args[*]}" >> "$TEST_LOG"
+        output=$(cd "$MOCK_WEBAPP_SCRATCH" && "$BRAINPRO_BIN" --gateway "$BRAINPRO_GATEWAY_URL" -p "$prompt" --yes "${args[@]}" 2>&1)
+    else
+        echo "Command: cd $MOCK_WEBAPP_SCRATCH && $BRAINPRO_BIN -p \"$prompt\" --yes ${args[*]}" >> "$TEST_LOG"
+        output=$(cd "$MOCK_WEBAPP_SCRATCH" && "$BRAINPRO_BIN" -p "$prompt" --yes "${args[@]}" 2>&1)
+    fi
     local exit_code=$?
 
     echo "Exit code: $exit_code" >> "$TEST_LOG"

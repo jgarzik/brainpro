@@ -34,7 +34,7 @@ fn main() -> Result<()> {
 
     // Gateway client mode: connect to remote gateway instead of running locally
     if let Some(gateway_url) = &args.gateway {
-        return gateway_client::run_gateway_mode(gateway_url, args.prompt.as_deref());
+        return gateway_client::run_gateway_mode(gateway_url, args.prompt.as_deref(), args.yes);
     }
 
     // Load configuration (includes built-in backends)

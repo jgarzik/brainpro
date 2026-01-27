@@ -10,12 +10,12 @@ use tokio::runtime::Runtime;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 /// Run the CLI in gateway client mode
-pub fn run_gateway_mode(gateway_url: &str, prompt: Option<&str>) -> Result<()> {
+pub fn run_gateway_mode(gateway_url: &str, prompt: Option<&str>, auto_approve: bool) -> Result<()> {
     let rt = Runtime::new()?;
-    rt.block_on(async { run_gateway_async(gateway_url, prompt).await })
+    rt.block_on(async { run_gateway_async(gateway_url, prompt, auto_approve).await })
 }
 
-async fn run_gateway_async(gateway_url: &str, prompt: Option<&str>) -> Result<()> {
+async fn run_gateway_async(gateway_url: &str, prompt: Option<&str>, auto_approve: bool) -> Result<()> {
     eprintln!("[gateway-client] Connecting to {}...", gateway_url);
 
     // Connect to WebSocket
@@ -65,10 +65,10 @@ async fn run_gateway_async(gateway_url: &str, prompt: Option<&str>) -> Result<()
 
     if let Some(prompt) = prompt {
         // One-shot mode
-        run_prompt(&mut write, &mut read, prompt).await?;
+        run_prompt(&mut write, &mut read, prompt, auto_approve).await?;
     } else {
         // REPL mode
-        run_repl(&mut write, &mut read).await?;
+        run_repl(&mut write, &mut read, auto_approve).await?;
     }
 
     Ok(())
@@ -87,11 +87,11 @@ type WsRead = futures_util::stream::SplitStream<
     >,
 >;
 
-async fn run_prompt(write: &mut WsWrite, read: &mut WsRead, prompt: &str) -> Result<()> {
-    send_chat_and_stream(write, read, prompt).await
+async fn run_prompt(write: &mut WsWrite, read: &mut WsRead, prompt: &str, auto_approve: bool) -> Result<()> {
+    send_chat_and_stream(write, read, prompt, auto_approve).await
 }
 
-async fn run_repl(write: &mut WsWrite, read: &mut WsRead) -> Result<()> {
+async fn run_repl(write: &mut WsWrite, read: &mut WsRead, auto_approve: bool) -> Result<()> {
     println!("brainpro (gateway mode) - type /exit to quit");
 
     loop {
@@ -110,7 +110,7 @@ async fn run_repl(write: &mut WsWrite, read: &mut WsRead) -> Result<()> {
             break;
         }
 
-        if let Err(e) = send_chat_and_stream(write, read, input).await {
+        if let Err(e) = send_chat_and_stream(write, read, input, auto_approve).await {
             eprintln!("Error: {}", e);
         }
     }
@@ -118,7 +118,7 @@ async fn run_repl(write: &mut WsWrite, read: &mut WsRead) -> Result<()> {
     Ok(())
 }
 
-async fn send_chat_and_stream(write: &mut WsWrite, read: &mut WsRead, message: &str) -> Result<()> {
+async fn send_chat_and_stream(write: &mut WsWrite, read: &mut WsRead, message: &str, auto_approve: bool) -> Result<()> {
     let start = Instant::now();
     let req_id = uuid::Uuid::new_v4().to_string();
 
@@ -138,7 +138,7 @@ async fn send_chat_and_stream(write: &mut WsWrite, read: &mut WsRead, message: &
         .map_err(|e| anyhow!("Failed to send request: {}", e))?;
 
     // Stream responses, handling yields
-    stream_response(write, read, &req_id, start).await
+    stream_response(write, read, &req_id, start, auto_approve).await
 }
 
 /// Stream response events, handling yields by prompting user and sending resume
@@ -147,6 +147,7 @@ async fn stream_response(
     read: &mut WsRead,
     _req_id: &str,
     start: Instant,
+    auto_approve: bool,
 ) -> Result<()> {
     let mut input_tokens = 0u64;
     let mut output_tokens = 0u64;
@@ -219,20 +220,25 @@ async fn stream_response(
                                 let tool_args =
                                     data.get("tool_args").cloned().unwrap_or(json!({}));
 
-                                eprintln!("⚠ Permission required: {}({})", tool_name, format_args_brief(&tool_args));
+                                let approved = if auto_approve {
+                                    eprintln!("⚠ Auto-approved: {}({})", tool_name, format_args_brief(&tool_args));
+                                    true
+                                } else {
+                                    eprintln!("⚠ Permission required: {}({})", tool_name, format_args_brief(&tool_args));
 
-                                // Show more details for certain tools
-                                if tool_name == "Bash" {
-                                    if let Some(cmd) = tool_args.get("command").and_then(|c| c.as_str()) {
-                                        eprintln!("  Command: {}", cmd);
+                                    // Show more details for certain tools
+                                    if tool_name == "Bash" {
+                                        if let Some(cmd) = tool_args.get("command").and_then(|c| c.as_str()) {
+                                            eprintln!("  Command: {}", cmd);
+                                        }
+                                    } else if tool_name == "Write" || tool_name == "Edit" {
+                                        if let Some(path) = tool_args.get("file_path").and_then(|p| p.as_str()) {
+                                            eprintln!("  File: {}", path);
+                                        }
                                     }
-                                } else if tool_name == "Write" || tool_name == "Edit" {
-                                    if let Some(path) = tool_args.get("file_path").and_then(|p| p.as_str()) {
-                                        eprintln!("  File: {}", path);
-                                    }
-                                }
 
-                                let approved = prompt_approval();
+                                    prompt_approval()
+                                };
 
                                 // Send resume request
                                 let resume_req_id = uuid::Uuid::new_v4().to_string();
