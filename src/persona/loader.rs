@@ -1,6 +1,6 @@
-//! Personality prompt loader.
+//! Persona prompt loader.
 //!
-//! Loads personality configurations and prompt sections from files.
+//! Loads persona configurations and prompt sections from files.
 //! Supports YAML frontmatter + Markdown body format.
 
 use anyhow::{anyhow, Result};
@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::config::PermissionMode;
-use crate::personality::PromptContext;
+use crate::persona::PromptContext;
 
 /// Parsed YAML frontmatter from a prompt section file
 #[derive(Debug, Deserialize)]
@@ -49,9 +49,9 @@ fn default_permission_mode() -> String {
     "default".to_string()
 }
 
-/// Configuration loaded from a personality's manifest
+/// Configuration loaded from a persona's manifest
 #[derive(Debug, Clone)]
-pub struct PersonalityConfig {
+pub struct PersonaConfig {
     pub name: String,
     pub display_name: String,
     pub description: String,
@@ -60,7 +60,7 @@ pub struct PersonalityConfig {
     pub sections: Vec<PromptSection>,
 }
 
-impl PersonalityConfig {
+impl PersonaConfig {
     /// Get tools as static string slices (for backward compatibility)
     pub fn tools_as_static(&self) -> Vec<&'static str> {
         self.default_tools
@@ -123,11 +123,11 @@ pub fn load_prompt_section(path: &Path) -> Result<PromptSection> {
     })
 }
 
-/// Get the base path for personality configs
+/// Get the base path for persona configs
 fn config_base_path() -> PathBuf {
     // Check for BRAINPRO_CONFIG_DIR env var first
     if let Ok(config_dir) = std::env::var("BRAINPRO_CONFIG_DIR") {
-        return PathBuf::from(config_dir).join("personalities");
+        return PathBuf::from(config_dir).join("persona");
     }
 
     // Try to find config/ relative to the executable
@@ -135,9 +135,9 @@ fn config_base_path() -> PathBuf {
         if let Some(exe_dir) = exe_path.parent() {
             // Check if we're in target/debug or target/release
             let config_path = if exe_dir.ends_with("debug") || exe_dir.ends_with("release") {
-                exe_dir.join("../../../config/personalities")
+                exe_dir.join("../../../config/persona")
             } else {
-                exe_dir.join("config/personalities")
+                exe_dir.join("config/persona")
             };
             if config_path.exists() {
                 return config_path;
@@ -146,23 +146,23 @@ fn config_base_path() -> PathBuf {
     }
 
     // Fall back to current working directory
-    PathBuf::from("config/personalities")
+    PathBuf::from("config/persona")
 }
 
-/// Load a personality configuration from files
-pub fn load_personality(name: &str) -> Result<PersonalityConfig> {
+/// Load a persona configuration from files
+pub fn load_persona(name: &str) -> Result<PersonaConfig> {
     let base_path = config_base_path();
-    let personality_dir = base_path.join(name);
+    let persona_dir = base_path.join(name);
 
-    if !personality_dir.exists() {
+    if !persona_dir.exists() {
         return Err(anyhow!(
-            "Personality directory not found: {:?}",
-            personality_dir
+            "Persona directory not found: {:?}",
+            persona_dir
         ));
     }
 
     // Load manifest
-    let manifest_path = personality_dir.join("manifest.md");
+    let manifest_path = persona_dir.join("manifest.md");
     let manifest_content = fs::read_to_string(&manifest_path)
         .map_err(|e| anyhow!("Failed to read manifest {:?}: {}", manifest_path, e))?;
 
@@ -177,21 +177,20 @@ pub fn load_personality(name: &str) -> Result<PersonalityConfig> {
 
     // Load all .md files except manifest.md
     let mut sections = Vec::new();
-    for entry in fs::read_dir(&personality_dir)? {
+    for entry in fs::read_dir(&persona_dir)? {
         let entry = entry?;
         let path = entry.path();
 
         if path.extension().map(|e| e == "md").unwrap_or(false)
-            && path.file_name().map(|n| n != "manifest.md").unwrap_or(false)
+            && path
+                .file_name()
+                .map(|n| n != "manifest.md")
+                .unwrap_or(false)
         {
             match load_prompt_section(&path) {
                 Ok(section) => sections.push(section),
                 Err(e) => {
-                    return Err(anyhow!(
-                        "Failed to load section {:?}: {}",
-                        path,
-                        e
-                    ));
+                    return Err(anyhow!("Failed to load section {:?}: {}", path, e));
                 }
             }
         }
@@ -209,7 +208,7 @@ pub fn load_personality(name: &str) -> Result<PersonalityConfig> {
         }
     });
 
-    Ok(PersonalityConfig {
+    Ok(PersonaConfig {
         name: manifest.name,
         display_name,
         description: manifest.description,
@@ -220,11 +219,11 @@ pub fn load_personality(name: &str) -> Result<PersonalityConfig> {
 }
 
 /// Render template variables in a string
-pub fn render_template(template: &str, ctx: &PromptContext, personality_name: &str) -> String {
+pub fn render_template(template: &str, ctx: &PromptContext, persona_name: &str) -> String {
     let mut result = template.to_string();
 
     // Replace template variables
-    result = result.replace("{{personality_name}}", personality_name);
+    result = result.replace("{{persona_name}}", persona_name);
     result = result.replace("{{working_dir}}", &ctx.working_dir.display().to_string());
     result = result.replace("{{active_skills}}", &ctx.active_skills.join(", "));
 
@@ -242,7 +241,7 @@ fn should_include_section(section: &PromptSection, ctx: &PromptContext) -> bool 
 }
 
 /// Build the complete system prompt from loaded config
-pub fn build_system_prompt(config: &PersonalityConfig, ctx: &PromptContext) -> String {
+pub fn build_system_prompt(config: &PersonaConfig, ctx: &PromptContext) -> String {
     let mut prompt_parts = Vec::new();
 
     for section in &config.sections {
@@ -301,7 +300,7 @@ This is the body content."#;
             ..Default::default()
         };
 
-        let template = "You are {{personality_name}}. Skills: {{active_skills}}";
+        let template = "You are {{persona_name}}. Skills: {{active_skills}}";
         let result = render_template(template, &ctx, "MrCode");
 
         assert!(result.contains("MrCode"));
@@ -329,8 +328,8 @@ This is the body content."#;
     }
 
     #[test]
-    fn test_load_mrcode_personality() {
-        let config = load_personality("mrcode").expect("Failed to load mrcode");
+    fn test_load_mrcode_persona() {
+        let config = load_persona("mrcode").expect("Failed to load mrcode");
         assert_eq!(config.name, "mrcode");
         assert!(!config.default_tools.is_empty());
         assert!(config.default_tools.contains(&"Read".to_string()));
@@ -340,13 +339,19 @@ This is the body content."#;
         // Verify prompt renders with template variable
         let ctx = PromptContext::default();
         let prompt = build_system_prompt(&config, &ctx);
-        assert!(prompt.contains("MrCode"), "Prompt should contain rendered personality name");
-        assert!(prompt.contains("coding assistant"), "Prompt should contain identity content");
+        assert!(
+            prompt.contains("MrCode"),
+            "Prompt should contain rendered persona name"
+        );
+        assert!(
+            prompt.contains("coding assistant"),
+            "Prompt should contain identity content"
+        );
     }
 
     #[test]
-    fn test_load_mrbot_personality() {
-        let config = load_personality("mrbot").expect("Failed to load mrbot");
+    fn test_load_mrbot_persona() {
+        let config = load_persona("mrbot").expect("Failed to load mrbot");
         assert_eq!(config.name, "mrbot");
         assert!(!config.default_tools.is_empty());
         assert!(config.default_tools.contains(&"Task".to_string()));
@@ -355,31 +360,49 @@ This is the body content."#;
         // Verify prompt renders with soul content
         let ctx = PromptContext::default();
         let prompt = build_system_prompt(&config, &ctx);
-        assert!(prompt.contains("MrBot"), "Prompt should contain rendered personality name");
-        assert!(prompt.contains("Personality & Values"), "Prompt should contain soul section");
-        assert!(prompt.contains("Core Truths"), "Prompt should contain soul content");
+        assert!(
+            prompt.contains("MrBot"),
+            "Prompt should contain rendered persona name"
+        );
+        assert!(
+            prompt.contains("Personality & Values"),
+            "Prompt should contain soul section"
+        );
+        assert!(
+            prompt.contains("Core Truths"),
+            "Prompt should contain soul content"
+        );
     }
 
     #[test]
     fn test_mrcode_plan_mode_prompt() {
-        let config = load_personality("mrcode").expect("Failed to load mrcode");
+        let config = load_persona("mrcode").expect("Failed to load mrcode");
         let ctx = PromptContext {
             plan_mode: true,
             ..Default::default()
         };
         let prompt = build_system_prompt(&config, &ctx);
-        assert!(prompt.contains("Plan Mode"), "Plan mode prompt should be included");
-        assert!(prompt.contains("read-only tools"), "Plan mode should mention read-only");
+        assert!(
+            prompt.contains("Plan Mode"),
+            "Plan mode prompt should be included"
+        );
+        assert!(
+            prompt.contains("read-only tools"),
+            "Plan mode should mention read-only"
+        );
     }
 
     #[test]
     fn test_mrcode_optimize_mode_prompt() {
-        let config = load_personality("mrcode").expect("Failed to load mrcode");
+        let config = load_persona("mrcode").expect("Failed to load mrcode");
         let ctx = PromptContext {
             optimize_mode: true,
             ..Default::default()
         };
         let prompt = build_system_prompt(&config, &ctx);
-        assert!(prompt.contains("AI-to-AI mode"), "Optimize mode should be included");
+        assert!(
+            prompt.contains("AI-to-AI mode"),
+            "Optimize mode should be included"
+        );
     }
 }

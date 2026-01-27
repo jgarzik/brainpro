@@ -53,6 +53,7 @@ pub struct TurnState {
 
 impl TurnState {
     /// Create a new turn state
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         turn_id: String,
         session_id: String,
@@ -207,11 +208,9 @@ impl TurnStateStore {
 
     /// Run cleanup in background
     pub fn start_cleanup_task(store: Arc<Self>) {
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(Duration::from_secs(60));
-                store.cleanup_expired();
-            }
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(60));
+            store.cleanup_expired();
         });
     }
 }

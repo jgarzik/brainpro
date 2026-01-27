@@ -1,33 +1,33 @@
-//! MrCode personality - focused coding assistant.
+//! MrCode persona - focused coding assistant.
 //!
 //! MrCode is a direct, terse coding assistant designed for:
 //! - On-demand local agent via Unix socket
 //! - Minimal toolset: Read, Write, Edit, Glob, Grep, Bash
-//! - Simple system prompt loaded from config/personalities/mrcode/
+//! - Simple system prompt loaded from config/persona/mrcode/
 
 mod loop_impl;
 
 use crate::agent::TurnResult;
 use crate::cli::Context;
 use crate::config::PermissionMode;
-use crate::personality::loader::{self, PersonalityConfig};
-use crate::personality::{Personality, PromptContext};
+use crate::persona::loader::{self, PersonaConfig};
+use crate::persona::{Persona, PromptContext};
 use anyhow::Result;
 use serde_json::Value;
 
-/// MrCode personality - focused coding assistant
+/// MrCode persona - focused coding assistant
 pub struct MrCode {
     /// Loaded configuration from files
-    config: PersonalityConfig,
+    config: PersonaConfig,
     /// Cached tools as static refs
     tools: Vec<&'static str>,
 }
 
 impl MrCode {
-    /// Create a new MrCode personality
+    /// Create a new MrCode persona
     pub fn new() -> Self {
-        let config = loader::load_personality("mrcode")
-            .expect("Failed to load mrcode personality config");
+        let config =
+            loader::load_persona("mrcode").expect("Failed to load mrcode persona config");
         let tools = config.tools_as_static();
         Self { config, tools }
     }
@@ -39,12 +39,12 @@ impl Default for MrCode {
     }
 }
 
-impl Personality for MrCode {
+impl Persona for MrCode {
     fn name(&self) -> &str {
         "MrCode"
     }
 
-    fn config(&self) -> &PersonalityConfig {
+    fn config(&self) -> &PersonaConfig {
         &self.config
     }
 
@@ -66,6 +66,6 @@ impl Personality for MrCode {
     }
 
     fn permission_mode(&self) -> PermissionMode {
-        self.config.permission_mode.clone()
+        self.config.permission_mode
     }
 }

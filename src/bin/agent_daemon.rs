@@ -4,14 +4,14 @@
 //! from the gateway via a Unix socket and streaming NDJSON events back.
 //!
 //! Usage:
-//!   brainpro-agent [--socket /path/to/socket] [--gateway-mode] [--personality mrcode|mrbot]
+//!   brainpro-agent [--socket /path/to/socket] [--gateway-mode] [--persona mrcode|mrbot]
 //!
 //! Environment variables:
 //!   BRAINPRO_AGENT_SOCKET - Path to Unix socket (default: /run/brainpro.sock)
 //!   BRAINPRO_GATEWAY_MODE - Enable gateway mode (yields on ask decisions)
-//!   BRAINPRO_PERSONALITY - Personality to use (mrcode or mrbot, default: mrbot)
+//!   BRAINPRO_PERSONA - Persona to use (mrcode or mrbot, default: mrbot)
 
-use brainpro::agent_service::server::run_with_personality;
+use brainpro::agent_service::server::run_with_persona;
 use std::env;
 
 fn main() {
@@ -21,18 +21,18 @@ fn main() {
     // Parse socket path from args or environment
     let socket_path = parse_socket_path();
     let gateway_mode = parse_gateway_mode();
-    let personality = parse_personality();
+    let persona = parse_persona();
 
     eprintln!("brainpro-agent starting...");
     eprintln!("Socket: {}", socket_path);
     eprintln!("Gateway mode: {}", gateway_mode);
-    eprintln!("Personality: {}", personality);
+    eprintln!("Persona: {}", persona);
 
     // Run the server
     let result = if gateway_mode {
-        run_with_personality(&socket_path, true, &personality)
+        run_with_persona(&socket_path, true, &persona)
     } else {
-        run_with_personality(&socket_path, false, &personality)
+        run_with_persona(&socket_path, false, &persona)
     };
 
     if let Err(e) = result {
@@ -77,18 +77,18 @@ fn parse_gateway_mode() -> bool {
     true
 }
 
-fn parse_personality() -> String {
+fn parse_persona() -> String {
     // Check command line args first
     let args: Vec<String> = env::args().collect();
     for i in 0..args.len() {
-        if args[i] == "--personality" && i + 1 < args.len() {
+        if args[i] == "--persona" && i + 1 < args.len() {
             return args[i + 1].clone();
         }
     }
 
     // Check environment variable
-    if let Ok(personality) = env::var("BRAINPRO_PERSONALITY") {
-        return personality;
+    if let Ok(persona) = env::var("BRAINPRO_PERSONA") {
+        return persona;
     }
 
     // Default: mrbot for gateway mode

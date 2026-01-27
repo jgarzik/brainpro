@@ -16,8 +16,8 @@ use brainpro::config::{Config, Target};
 use brainpro::cost::{format_cost, PricingTable, SessionCosts};
 use brainpro::hooks::HookManager;
 use brainpro::model_routing::ModelRouter;
-use brainpro::personality::mrcode::MrCode;
-use brainpro::personality::Personality;
+use brainpro::persona::mrcode::MrCode;
+use brainpro::persona::Persona;
 use brainpro::plan::PlanModeState;
 use brainpro::policy::PolicyEngine;
 use brainpro::skillpacks::{ActiveSkills, SkillIndex};
@@ -205,21 +205,21 @@ fn main() -> Result<()> {
         todo_state: RefCell::new(TodoState::new()),
     };
 
-    // Get MrCode personality
-    let personality = MrCode::new();
+    // Get MrCode persona
+    let persona = MrCode::new();
 
     if let Some(prompt) = &args.prompt {
         // One-shot mode
-        run_once(&ctx, &personality, prompt)?;
+        run_once(&ctx, &persona, prompt)?;
     } else {
         // Interactive REPL mode
-        run_repl(ctx, &personality)?;
+        run_repl(ctx, &persona)?;
     }
 
     Ok(())
 }
 
-fn run_once(ctx: &Context, personality: &MrCode, prompt: &str) -> Result<()> {
+fn run_once(ctx: &Context, persona: &MrCode, prompt: &str) -> Result<()> {
     // Run UserPromptSubmit hooks
     let (proceed, updated_prompt) = ctx.hooks.borrow().user_prompt_submit(prompt);
     if !proceed {
@@ -238,7 +238,7 @@ fn run_once(ctx: &Context, personality: &MrCode, prompt: &str) -> Result<()> {
     let start = Instant::now();
     let mut messages = Vec::new();
     let mut rl = DefaultEditor::new()?;
-    let result = personality.run_turn(ctx, prompt, &mut messages)?;
+    let result = persona.run_turn(ctx, prompt, &mut messages)?;
 
     let mut total_stats = result.stats.clone();
     let mut current_result = result;
@@ -254,7 +254,7 @@ fn run_once(ctx: &Context, personality: &MrCode, prompt: &str) -> Result<()> {
                 }));
 
                 current_result =
-                    personality.run_turn(ctx, "[User answered questions above]", &mut messages)?;
+                    persona.run_turn(ctx, "[User answered questions above]", &mut messages)?;
                 total_stats.merge(&current_result.stats);
             }
             Err(e) => {
@@ -268,7 +268,7 @@ fn run_once(ctx: &Context, personality: &MrCode, prompt: &str) -> Result<()> {
     while current_result.force_continue {
         if let Some(continue_prompt) = current_result.continue_prompt.take() {
             println!("[Continuing...]");
-            current_result = personality.run_turn(ctx, &continue_prompt, &mut messages)?;
+            current_result = persona.run_turn(ctx, &continue_prompt, &mut messages)?;
             total_stats.merge(&current_result.stats);
         } else {
             break;
@@ -291,7 +291,7 @@ fn run_once(ctx: &Context, personality: &MrCode, prompt: &str) -> Result<()> {
     Ok(())
 }
 
-fn run_repl(ctx: Context, personality: &MrCode) -> Result<()> {
+fn run_repl(ctx: Context, persona: &MrCode) -> Result<()> {
     let mut rl = DefaultEditor::new()?;
     let mut messages = Vec::new();
 
@@ -333,7 +333,7 @@ fn run_repl(ctx: Context, personality: &MrCode) -> Result<()> {
                 };
 
                 let start = Instant::now();
-                match personality.run_turn(&ctx, &line, &mut messages) {
+                match persona.run_turn(&ctx, &line, &mut messages) {
                     Ok(result) => {
                         let mut total_stats = result.stats.clone();
                         let mut current_result = result;
@@ -348,7 +348,7 @@ fn run_repl(ctx: Context, personality: &MrCode) -> Result<()> {
                                         "content": serde_json::to_string(&answers).unwrap_or_default()
                                     }));
 
-                                    match personality.run_turn(
+                                    match persona.run_turn(
                                         &ctx,
                                         "[User answered questions above]",
                                         &mut messages,
@@ -374,7 +374,7 @@ fn run_repl(ctx: Context, personality: &MrCode) -> Result<()> {
                         while current_result.force_continue {
                             if let Some(continue_prompt) = current_result.continue_prompt.take() {
                                 println!("[Continuing...]");
-                                match personality.run_turn(&ctx, &continue_prompt, &mut messages) {
+                                match persona.run_turn(&ctx, &continue_prompt, &mut messages) {
                                     Ok(continuation) => {
                                         total_stats.merge(&continuation.stats);
                                         current_result = continuation;

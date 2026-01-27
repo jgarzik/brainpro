@@ -15,7 +15,11 @@ pub fn run_gateway_mode(gateway_url: &str, prompt: Option<&str>, auto_approve: b
     rt.block_on(async { run_gateway_async(gateway_url, prompt, auto_approve).await })
 }
 
-async fn run_gateway_async(gateway_url: &str, prompt: Option<&str>, auto_approve: bool) -> Result<()> {
+async fn run_gateway_async(
+    gateway_url: &str,
+    prompt: Option<&str>,
+    auto_approve: bool,
+) -> Result<()> {
     eprintln!("[gateway-client] Connecting to {}...", gateway_url);
 
     // Connect to WebSocket
@@ -75,19 +79,20 @@ async fn run_gateway_async(gateway_url: &str, prompt: Option<&str>, auto_approve
 }
 
 type WsWrite = futures_util::stream::SplitSink<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     Message,
 >;
 
 type WsRead = futures_util::stream::SplitStream<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
 >;
 
-async fn run_prompt(write: &mut WsWrite, read: &mut WsRead, prompt: &str, auto_approve: bool) -> Result<()> {
+async fn run_prompt(
+    write: &mut WsWrite,
+    read: &mut WsRead,
+    prompt: &str,
+    auto_approve: bool,
+) -> Result<()> {
     send_chat_and_stream(write, read, prompt, auto_approve).await
 }
 
@@ -118,7 +123,12 @@ async fn run_repl(write: &mut WsWrite, read: &mut WsRead, auto_approve: bool) ->
     Ok(())
 }
 
-async fn send_chat_and_stream(write: &mut WsWrite, read: &mut WsRead, message: &str, auto_approve: bool) -> Result<()> {
+async fn send_chat_and_stream(
+    write: &mut WsWrite,
+    read: &mut WsRead,
+    message: &str,
+    auto_approve: bool,
+) -> Result<()> {
     let start = Instant::now();
     let req_id = uuid::Uuid::new_v4().to_string();
 
@@ -191,8 +201,10 @@ async fn stream_response(
                                 }
                             }
                             "agent.done" => {
-                                input_tokens =
-                                    data.get("input_tokens").and_then(|t| t.as_u64()).unwrap_or(0);
+                                input_tokens = data
+                                    .get("input_tokens")
+                                    .and_then(|t| t.as_u64())
+                                    .unwrap_or(0);
                                 output_tokens = data
                                     .get("output_tokens")
                                     .and_then(|t| t.as_u64())
@@ -215,24 +227,37 @@ async fn stream_response(
                                     .get("tool_call_id")
                                     .and_then(|t| t.as_str())
                                     .unwrap_or("");
-                                let tool_name =
-                                    data.get("tool_name").and_then(|n| n.as_str()).unwrap_or("?");
-                                let tool_args =
-                                    data.get("tool_args").cloned().unwrap_or(json!({}));
+                                let tool_name = data
+                                    .get("tool_name")
+                                    .and_then(|n| n.as_str())
+                                    .unwrap_or("?");
+                                let tool_args = data.get("tool_args").cloned().unwrap_or(json!({}));
 
                                 let approved = if auto_approve {
-                                    eprintln!("⚠ Auto-approved: {}({})", tool_name, format_args_brief(&tool_args));
+                                    eprintln!(
+                                        "⚠ Auto-approved: {}({})",
+                                        tool_name,
+                                        format_args_brief(&tool_args)
+                                    );
                                     true
                                 } else {
-                                    eprintln!("⚠ Permission required: {}({})", tool_name, format_args_brief(&tool_args));
+                                    eprintln!(
+                                        "⚠ Permission required: {}({})",
+                                        tool_name,
+                                        format_args_brief(&tool_args)
+                                    );
 
                                     // Show more details for certain tools
                                     if tool_name == "Bash" {
-                                        if let Some(cmd) = tool_args.get("command").and_then(|c| c.as_str()) {
+                                        if let Some(cmd) =
+                                            tool_args.get("command").and_then(|c| c.as_str())
+                                        {
                                             eprintln!("  Command: {}", cmd);
                                         }
                                     } else if tool_name == "Write" || tool_name == "Edit" {
-                                        if let Some(path) = tool_args.get("file_path").and_then(|p| p.as_str()) {
+                                        if let Some(path) =
+                                            tool_args.get("file_path").and_then(|p| p.as_str())
+                                        {
                                             eprintln!("  File: {}", path);
                                         }
                                     }
@@ -373,19 +398,36 @@ fn prompt_questions(questions: &[Value]) -> Value {
     for (i, q) in questions.iter().enumerate() {
         let question = q.get("question").and_then(|q| q.as_str()).unwrap_or("?");
         let header = q.get("header").and_then(|h| h.as_str()).unwrap_or("");
-        let options = q.get("options").and_then(|o| o.as_array()).cloned().unwrap_or_default();
-        let multi_select = q.get("multi_select").and_then(|m| m.as_bool()).unwrap_or(false);
+        let options = q
+            .get("options")
+            .and_then(|o| o.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let multi_select = q
+            .get("multi_select")
+            .and_then(|m| m.as_bool())
+            .unwrap_or(false);
 
         println!("\n[{}] {}", header, question);
 
         for (j, opt) in options.iter().enumerate() {
             let label = opt.get("label").and_then(|l| l.as_str()).unwrap_or("?");
-            let desc = opt.get("description").and_then(|d| d.as_str()).unwrap_or("");
+            let desc = opt
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
             println!("  {}. {} - {}", j + 1, label, desc);
         }
         println!("  {}. Other (type your answer)", options.len() + 1);
 
-        print!("Choice{}: ", if multi_select { "(s, comma-separated)" } else { "" });
+        print!(
+            "Choice{}: ",
+            if multi_select {
+                "(s, comma-separated)"
+            } else {
+                ""
+            }
+        );
         io::stdout().flush().ok();
 
         let mut input = String::new();
@@ -404,7 +446,8 @@ fn prompt_questions(questions: &[Value]) -> Value {
                     let s = s.trim();
                     if let Ok(idx) = s.parse::<usize>() {
                         if idx > 0 && idx <= options.len() {
-                            return options.get(idx - 1)
+                            return options
+                                .get(idx - 1)
                                 .and_then(|o| o.get("label"))
                                 .and_then(|l| l.as_str())
                                 .map(|s| s.to_string());
@@ -426,7 +469,8 @@ fn prompt_questions(questions: &[Value]) -> Value {
             // Single choice
             if let Ok(idx) = input.parse::<usize>() {
                 if idx > 0 && idx <= options.len() {
-                    if let Some(label) = options.get(idx - 1)
+                    if let Some(label) = options
+                        .get(idx - 1)
                         .and_then(|o| o.get("label"))
                         .and_then(|l| l.as_str())
                     {

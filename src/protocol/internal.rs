@@ -242,12 +242,7 @@ impl AgentEvent {
         }
     }
 
-    pub fn yield_input(
-        id: &str,
-        turn_id: &str,
-        tool_call_id: &str,
-        questions: Vec<Value>,
-    ) -> Self {
+    pub fn yield_input(id: &str, turn_id: &str, tool_call_id: &str, questions: Vec<Value>) -> Self {
         Self {
             id: id.to_string(),
             event: AgentEventType::Yield {

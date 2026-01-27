@@ -60,7 +60,10 @@ impl AgentConnection {
 
         // Parse response
         if let Ok(event) = serde_json::from_str::<AgentEvent>(&line) {
-            Ok(matches!(event.event, crate::protocol::internal::AgentEventType::Pong))
+            Ok(matches!(
+                event.event,
+                crate::protocol::internal::AgentEventType::Pong
+            ))
         } else {
             Ok(false)
         }
@@ -77,9 +80,8 @@ fn send_request_blocking(
     let mut writer = stream;
 
     // Send request
-    let json = serde_json::to_string(&request).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
-    })?;
+    let json = serde_json::to_string(&request)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
     writeln!(writer, "{}", json)?;
     writer.flush()?;
 

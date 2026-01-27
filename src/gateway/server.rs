@@ -292,8 +292,11 @@ async fn handle_request(
         }
 
         _ => {
-            let response =
-                ClientResponse::error(&req_id, "unknown_method", &format!("Unknown method: {}", request.method));
+            let response = ClientResponse::error(
+                &req_id,
+                "unknown_method",
+                &format!("Unknown method: {}", request.method),
+            );
             send_response(tx, &response);
         }
     }
@@ -308,10 +311,7 @@ async fn handle_chat_send(
     params: Value,
     tx: &mpsc::UnboundedSender<ClientMessage>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let message = params
-        .get("message")
-        .and_then(|m| m.as_str())
-        .unwrap_or("");
+    let message = params.get("message").and_then(|m| m.as_str()).unwrap_or("");
 
     if message.is_empty() {
         let response = ClientResponse::error(req_id, "invalid_params", "Missing message parameter");
@@ -489,10 +489,7 @@ async fn handle_turn_resume(
     params: Value,
     tx: &mpsc::UnboundedSender<ClientMessage>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let turn_id = params
-        .get("turn_id")
-        .and_then(|t| t.as_str())
-        .unwrap_or("");
+    let turn_id = params.get("turn_id").and_then(|t| t.as_str()).unwrap_or("");
 
     if turn_id.is_empty() {
         let response = ClientResponse::error(req_id, "invalid_params", "Missing turn_id parameter");
@@ -514,7 +511,10 @@ async fn handle_turn_resume(
     // Build resume data based on response type
     let resume_data = match response_type {
         "approval" => {
-            let approved = params.get("approved").and_then(|a| a.as_bool()).unwrap_or(false);
+            let approved = params
+                .get("approved")
+                .and_then(|a| a.as_bool())
+                .unwrap_or(false);
             ResumeData {
                 turn_id: turn_id.to_string(),
                 tool_call_id,

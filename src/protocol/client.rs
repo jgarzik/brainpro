@@ -254,8 +254,11 @@ mod tests {
 
     #[test]
     fn test_client_event() {
-        let event =
-            ClientEvent::new(events::AGENT_THINKING, json!({"content": "..."}), Some("s1".into()));
+        let event = ClientEvent::new(
+            events::AGENT_THINKING,
+            json!({"content": "..."}),
+            Some("s1".into()),
+        );
         assert_eq!(event.event, events::AGENT_THINKING);
         assert!(event.session_id.is_some());
     }

@@ -105,7 +105,10 @@ pub struct Args {
     #[arg(long, help = "Resume a previous session by ID")]
     pub resume: Option<String>,
 
-    #[arg(long, help = "Connect via gateway WebSocket (e.g., ws://localhost:18789/ws)")]
+    #[arg(
+        long,
+        help = "Connect via gateway WebSocket (e.g., ws://localhost:18789/ws)"
+    )]
     pub gateway: Option<String>,
 }
 

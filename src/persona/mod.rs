@@ -1,6 +1,6 @@
-//! Agent personality system.
+//! Agent persona system.
 //!
-//! This module provides distinct agent personalities with separate behaviors:
+//! This module provides distinct agent personas with separate behaviors:
 //! - MrCode: Direct CLI, focused coding assistant with minimal toolset
 //! - MrBot: Gateway/Docker path, conversational bot with SOUL.md support
 
@@ -8,7 +8,7 @@ pub mod loader;
 pub mod mrbot;
 pub mod mrcode;
 
-pub use loader::{load_personality, PersonalityConfig};
+pub use loader::{load_persona, PersonaConfig};
 
 use crate::agent::TurnResult;
 use crate::cli::Context;
@@ -28,14 +28,17 @@ pub struct PromptContext {
     pub plan_mode: bool,
     /// Whether optimize mode is enabled (-O flag)
     pub optimize_mode: bool,
-    /// SOUL.md content for MrBot personality
+    /// SOUL.md content for MrBot persona
     pub soul_content: Option<String>,
 }
 
 impl PromptContext {
     /// Create a new prompt context from the CLI context
     pub fn from_context(ctx: &Context) -> Self {
-        let active_skills = ctx.active_skills.borrow().list()
+        let active_skills = ctx
+            .active_skills
+            .borrow()
+            .list()
             .into_iter()
             .map(|s| s.to_string())
             .collect();
@@ -57,18 +60,18 @@ impl PromptContext {
     }
 }
 
-/// Trait defining an agent personality
-pub trait Personality: Send + Sync {
-    /// Personality identifier
+/// Trait defining an agent persona
+pub trait Persona: Send + Sync {
+    /// Persona identifier
     fn name(&self) -> &str;
 
-    /// Get the personality configuration (loaded from files)
-    fn config(&self) -> &PersonalityConfig;
+    /// Get the persona configuration (loaded from files)
+    fn config(&self) -> &PersonaConfig;
 
-    /// Build the system prompt for this personality
+    /// Build the system prompt for this persona
     fn build_system_prompt(&self, ctx: &PromptContext) -> String;
 
-    /// Run the agent loop (each personality has its own implementation)
+    /// Run the agent loop (each persona has its own implementation)
     fn run_turn(
         &self,
         ctx: &Context,
@@ -76,15 +79,15 @@ pub trait Personality: Send + Sync {
         messages: &mut Vec<Value>,
     ) -> Result<TurnResult>;
 
-    /// Get available tools for this personality
+    /// Get available tools for this persona
     fn available_tools(&self) -> &[&str];
 
-    /// Default permission mode for this personality
+    /// Default permission mode for this persona
     fn permission_mode(&self) -> PermissionMode;
 }
 
-/// Get personality by name
-pub fn get_personality(name: &str) -> Option<Box<dyn Personality>> {
+/// Get persona by name
+pub fn get_persona(name: &str) -> Option<Box<dyn Persona>> {
     match name.to_lowercase().as_str() {
         "mrcode" => Some(Box::new(mrcode::MrCode::new())),
         "mrbot" => Some(Box::new(mrbot::MrBot::new())),
@@ -92,12 +95,12 @@ pub fn get_personality(name: &str) -> Option<Box<dyn Personality>> {
     }
 }
 
-/// Get the default MrCode personality
+/// Get the default MrCode persona
 pub fn mrcode() -> mrcode::MrCode {
     mrcode::MrCode::new()
 }
 
-/// Get the default MrBot personality
+/// Get the default MrBot persona
 pub fn mrbot() -> mrbot::MrBot {
     mrbot::MrBot::new()
 }

@@ -4,9 +4,7 @@
 //! saving state for later resumption.
 
 use crate::agent_service::turn_state::{PendingToolCall, TurnState, TurnStateStore};
-use crate::protocol::internal::{
-    AgentEvent, AgentMethod, AgentRequest, UsageStats, YieldReason,
-};
+use crate::protocol::internal::{AgentEvent, AgentMethod, AgentRequest, UsageStats, YieldReason};
 use clap::Parser;
 use serde_json::{json, Value};
 use std::sync::{mpsc, Arc};
@@ -23,8 +21,8 @@ pub struct WorkerConfig {
     pub gateway_mode: bool,
     /// Turn state store for persistence
     pub turn_store: Arc<TurnStateStore>,
-    /// Personality to use (mrcode or mrbot)
-    pub personality: String,
+    /// Persona to use (mrcode or mrbot)
+    pub persona: String,
 }
 
 impl Default for WorkerConfig {
@@ -32,7 +30,7 @@ impl Default for WorkerConfig {
         Self {
             gateway_mode: false,
             turn_store: Arc::new(TurnStateStore::default()),
-            personality: "mrbot".to_string(),
+            persona: "mrbot".to_string(),
         }
     }
 }
@@ -75,17 +73,12 @@ pub fn run_agent_task_with_config(
                 run_turn_task(request, event_tx)
             }
         }
-        AgentMethod::ResumeTurn => {
-            run_resume_task(request, event_tx, config)
-        }
+        AgentMethod::ResumeTurn => run_resume_task(request, event_tx, config),
     }
 }
 
 /// Run a turn in non-gateway mode (original behavior)
-fn run_turn_task(
-    request: AgentRequest,
-    event_tx: mpsc::Sender<AgentEvent>,
-) -> Result<(), String> {
+fn run_turn_task(request: AgentRequest, event_tx: mpsc::Sender<AgentEvent>) -> Result<(), String> {
     use crate::backend::BackendRegistry;
     use crate::cli::Context;
     use crate::commands::CommandIndex;
@@ -206,7 +199,11 @@ fn run_turn_task(
 
     // If messages is empty or doesn't have a user message, we need input
     if user_input.is_empty() {
-        let _ = event_tx.send(AgentEvent::error(id, "no_input", "No user message provided"));
+        let _ = event_tx.send(AgentEvent::error(
+            id,
+            "no_input",
+            "No user message provided",
+        ));
         return Ok(());
     }
 
@@ -320,11 +317,7 @@ fn run_turn_gateway_mode(
         .or_else(|| cfg.get_default_target());
 
     if target.is_none() {
-        let _ = event_tx.send(AgentEvent::error(
-            id,
-            "no_target",
-            "No target configured",
-        ));
+        let _ = event_tx.send(AgentEvent::error(id, "no_target", "No target configured"));
         return Ok(());
     }
     let target = target.unwrap();
@@ -339,7 +332,11 @@ fn run_turn_gateway_mode(
         .to_string();
 
     if user_input.is_empty() {
-        let _ = event_tx.send(AgentEvent::error(id, "no_input", "No user message provided"));
+        let _ = event_tx.send(AgentEvent::error(
+            id,
+            "no_input",
+            "No user message provided",
+        ));
         return Ok(());
     }
 
@@ -417,7 +414,8 @@ Keep edits minimal and precise."#;
         // Get client for target's backend
         let response = {
             let mut backends = ctx.backends.borrow_mut();
-            let client = backends.get_client(&target.backend)
+            let client = backends
+                .get_client(&target.backend)
                 .map_err(|e| format!("Backend error: {}", e))?;
 
             let request = llm::ChatRequest {
@@ -427,7 +425,9 @@ Keep edits minimal and precise."#;
                 tool_choice: Some("auto".to_string()),
             };
 
-            client.chat(&request).map_err(|e| format!("LLM error: {}", e))?
+            client
+                .chat(&request)
+                .map_err(|e| format!("LLM error: {}", e))?
         };
 
         // Track usage
@@ -489,7 +489,12 @@ Keep edits minimal and precise."#;
 
                     let ok = result.get("error").is_none();
                     let _ = event_tx.send(AgentEvent::tool_result(
-                        id, name, &tc.id, result.clone(), ok, duration_ms,
+                        id,
+                        name,
+                        &tc.id,
+                        result.clone(),
+                        ok,
+                        duration_ms,
                     ));
 
                     // Add tool result to conversation
@@ -511,7 +516,12 @@ Keep edits minimal and precise."#;
                         }
                     });
                     let _ = event_tx.send(AgentEvent::tool_result(
-                        id, name, &tc.id, result.clone(), false, 0,
+                        id,
+                        name,
+                        &tc.id,
+                        result.clone(),
+                        false,
+                        0,
                     ));
 
                     let tool_msg = json!({
@@ -565,18 +575,19 @@ Keep edits minimal and precise."#;
                                 let _ = config.turn_store.save(state);
 
                                 // Send yield event
-                                let _ = event_tx.send(AgentEvent::yield_input(
-                                    id,
-                                    &turn_id,
-                                    &tc.id,
-                                    q_json,
-                                ));
+                                let _ = event_tx
+                                    .send(AgentEvent::yield_input(id, &turn_id, &tc.id, q_json));
                                 return Ok(());
                             }
                             Err(error) => {
                                 // Invalid questions, return error
                                 let _ = event_tx.send(AgentEvent::tool_result(
-                                    id, name, &tc.id, error.clone(), false, 0,
+                                    id,
+                                    name,
+                                    &tc.id,
+                                    error.clone(),
+                                    false,
+                                    0,
                                 ));
                                 let tool_msg = json!({
                                     "role": "tool",
@@ -789,7 +800,12 @@ Keep edits minimal and precise."#;
             if resume_data.approved == Some(true) {
                 // Execute the tool
                 let tool_start = std::time::Instant::now();
-                let result = execute_tool(&ctx, &pending.tool_name, pending.tool_args.clone(), &bash_config)?;
+                let result = execute_tool(
+                    &ctx,
+                    &pending.tool_name,
+                    pending.tool_args.clone(),
+                    &bash_config,
+                )?;
                 let duration_ms = tool_start.elapsed().as_millis() as u64;
 
                 let ok = result.get("error").is_none();
@@ -848,7 +864,8 @@ Keep edits minimal and precise."#;
     for _iteration in 1..=MAX_ITERATIONS {
         let response = {
             let mut backends = ctx.backends.borrow_mut();
-            let client = backends.get_client(&target.backend)
+            let client = backends
+                .get_client(&target.backend)
                 .map_err(|e| format!("Backend error: {}", e))?;
 
             let request = llm::ChatRequest {
@@ -858,7 +875,9 @@ Keep edits minimal and precise."#;
                 tool_choice: Some("auto".to_string()),
             };
 
-            client.chat(&request).map_err(|e| format!("LLM error: {}", e))?
+            client
+                .chat(&request)
+                .map_err(|e| format!("LLM error: {}", e))?
         };
 
         if let Some(usage) = &response.usage {
@@ -910,7 +929,12 @@ Keep edits minimal and precise."#;
 
                     let ok = result.get("error").is_none();
                     let _ = event_tx.send(AgentEvent::tool_result(
-                        id, name, &tc.id, result.clone(), ok, duration_ms,
+                        id,
+                        name,
+                        &tc.id,
+                        result.clone(),
+                        ok,
+                        duration_ms,
                     ));
 
                     let tool_msg = json!({
@@ -930,7 +954,12 @@ Keep edits minimal and precise."#;
                         }
                     });
                     let _ = event_tx.send(AgentEvent::tool_result(
-                        id, name, &tc.id, result.clone(), false, 0,
+                        id,
+                        name,
+                        &tc.id,
+                        result.clone(),
+                        false,
+                        0,
                     ));
 
                     let tool_msg = json!({
@@ -992,7 +1021,12 @@ Keep edits minimal and precise."#;
                             }
                             Err(error) => {
                                 let _ = event_tx.send(AgentEvent::tool_result(
-                                    id, name, &tc.id, error.clone(), false, 0,
+                                    id,
+                                    name,
+                                    &tc.id,
+                                    error.clone(),
+                                    false,
+                                    0,
                                 ));
                                 let tool_msg = json!({
                                     "role": "tool",
@@ -1098,8 +1132,8 @@ fn execute_tool(
             })),
         }
     } else if name == "Task" {
-        let (task_result, _sub_stats) = tools::task::execute(args.clone(), ctx)
-            .map_err(|e| format!("Task error: {}", e))?;
+        let (task_result, _sub_stats) =
+            tools::task::execute(args.clone(), ctx).map_err(|e| format!("Task error: {}", e))?;
         Ok(task_result)
     } else if name == "TodoWrite" {
         Ok(tools::todo::execute(args, &ctx.todo_state))
@@ -1110,8 +1144,7 @@ fn execute_tool(
         Ok(tools::plan_mode::execute_exit(&ctx.plan_mode))
     } else {
         // Execute built-in tool
-        tools::execute(name, args, &ctx.root, bash_config)
-            .map_err(|e| format!("Tool error: {}", e))
+        tools::execute(name, args, &ctx.root, bash_config).map_err(|e| format!("Tool error: {}", e))
     }
 }
 

@@ -1,9 +1,9 @@
-//! MrBot personality - conversational bot with personality.
+//! MrBot persona - conversational bot with personality.
 //!
 //! MrBot is designed for:
 //! - Gateway/daemon architecture (yield/resume)
 //! - Full toolset including messaging/voice (future)
-//! - Personality loaded from config/personalities/mrbot/
+//! - Persona loaded from config/persona/mrbot/
 //! - Modular prompt builder (clawdbot-style)
 
 mod loop_impl;
@@ -11,24 +11,24 @@ mod loop_impl;
 use crate::agent::TurnResult;
 use crate::cli::Context;
 use crate::config::PermissionMode;
-use crate::personality::loader::{self, PersonalityConfig};
-use crate::personality::{Personality, PromptContext};
+use crate::persona::loader::{self, PersonaConfig};
+use crate::persona::{Persona, PromptContext};
 use anyhow::Result;
 use serde_json::Value;
 
-/// MrBot personality - conversational bot with SOUL
+/// MrBot persona - conversational bot with SOUL
 pub struct MrBot {
     /// Loaded configuration from files
-    config: PersonalityConfig,
+    config: PersonaConfig,
     /// Cached tools as static refs
     tools: Vec<&'static str>,
 }
 
 impl MrBot {
-    /// Create a new MrBot personality
+    /// Create a new MrBot persona
     pub fn new() -> Self {
-        let config = loader::load_personality("mrbot")
-            .expect("Failed to load mrbot personality config");
+        let config =
+            loader::load_persona("mrbot").expect("Failed to load mrbot persona config");
         let tools = config.tools_as_static();
         Self { config, tools }
     }
@@ -40,12 +40,12 @@ impl Default for MrBot {
     }
 }
 
-impl Personality for MrBot {
+impl Persona for MrBot {
     fn name(&self) -> &str {
         "MrBot"
     }
 
-    fn config(&self) -> &PersonalityConfig {
+    fn config(&self) -> &PersonaConfig {
         &self.config
     }
 
@@ -67,6 +67,6 @@ impl Personality for MrBot {
     }
 
     fn permission_mode(&self) -> PermissionMode {
-        self.config.permission_mode.clone()
+        self.config.permission_mode
     }
 }

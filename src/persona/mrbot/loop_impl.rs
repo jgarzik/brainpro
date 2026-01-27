@@ -1,13 +1,13 @@
-//! MrCode agent loop implementation.
+//! MrBot agent loop implementation.
 //!
-//! This is the core agent loop for MrCode, migrated from agent.rs.
-//! It handles user input, LLM calls, and tool execution.
+//! This is the core agent loop for MrBot, designed for gateway mode
+//! with yield/resume semantics for permission handling.
 
 use crate::{
     agent::{PendingQuestion, TurnResult},
     cli::Context,
     llm::{self, LlmClient},
-    personality::PromptContext,
+    persona::PromptContext,
     plan::{self, PlanPhase},
     policy::Decision,
     tool_display, tools,
@@ -15,7 +15,7 @@ use crate::{
 use anyhow::Result;
 use serde_json::{json, Value};
 
-use crate::personality::loader::{self, PersonalityConfig};
+use crate::persona::loader::{self, PersonaConfig};
 
 const MAX_ITERATIONS: usize = 12;
 
@@ -31,9 +31,9 @@ fn verbose(ctx: &Context, message: &str) {
     }
 }
 
-/// Run a single turn of the MrCode agent loop
+/// Run a single turn of the MrBot agent loop
 pub fn run_turn(
-    config: &PersonalityConfig,
+    config: &PersonaConfig,
     ctx: &Context,
     user_input: &str,
     messages: &mut Vec<Value>,
@@ -91,7 +91,7 @@ pub fn run_turn(
         }
     }
 
-    // Get built-in tool schemas - MrCode has a minimal toolset
+    // Get built-in tool schemas (including Task for main agent) and add MCP tools
     let schema_opts = tools::SchemaOptions::new(ctx.args.optimize);
     let mut tool_schemas = if in_planning_mode {
         // In planning mode, only provide read-only tools
@@ -110,8 +110,8 @@ pub fn run_turn(
             })
             .collect()
     } else {
-        // MrCode uses base schemas without Task tool by default
-        tools::schemas(&schema_opts)
+        // MrBot has full toolset including Task
+        tools::schemas_with_task(&schema_opts)
     };
 
     // Apply allowed-tools restriction from active skills
@@ -128,6 +128,10 @@ pub fn run_turn(
             {
                 // ActivateSkill is always available
                 if name == "ActivateSkill" {
+                    return true;
+                }
+                // Task is always available for subagent delegation
+                if name == "Task" {
                     return true;
                 }
                 allowed.iter().any(|a| a == name)
@@ -148,7 +152,7 @@ pub fn run_turn(
             let mut backends = ctx.backends.borrow_mut();
             let client = backends.get_client(&target.backend)?;
 
-            // Build system prompt from personality config
+            // Build system prompt from persona config
             let prompt_ctx = PromptContext::from_context(ctx);
             let mut system_prompt = loader::build_system_prompt(config, &prompt_ctx);
 
@@ -405,6 +409,11 @@ pub fn run_turn(
                             }
                         }
                     }
+                } else if name == "Task" {
+                    // Execute Task tool (subagent delegation)
+                    let (task_result, sub_stats) = tools::task::execute(args.clone(), ctx)?;
+                    turn_result.stats.merge(&sub_stats);
+                    task_result
                 } else if name == "TodoWrite" {
                     // Execute TodoWrite tool
                     tools::todo::execute(args.clone(), &ctx.todo_state)
