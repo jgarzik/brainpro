@@ -20,6 +20,8 @@ pub struct AgentServerConfig {
     pub max_concurrent: usize,
     /// Enable gateway mode (yields on ask decisions)
     pub gateway_mode: bool,
+    /// Personality to use (mrcode or mrbot)
+    pub personality: String,
 }
 
 impl Default for AgentServerConfig {
@@ -28,6 +30,7 @@ impl Default for AgentServerConfig {
             socket_path: "/run/brainpro.sock".to_string(),
             max_concurrent: 4,
             gateway_mode: false,
+            personality: "mrbot".to_string(),
         }
     }
 }
@@ -70,8 +73,8 @@ impl AgentServer {
 
         let listener = UnixListener::bind(socket_path)?;
         eprintln!(
-            "[agent] Listening on Unix socket: {} (gateway_mode={})",
-            self.config.socket_path, self.config.gateway_mode
+            "[agent] Listening on Unix socket: {} (gateway_mode={}, personality={})",
+            self.config.socket_path, self.config.gateway_mode, self.config.personality
         );
 
         for stream in listener.incoming() {
@@ -80,9 +83,10 @@ impl AgentServer {
                     let in_flight = Arc::clone(&self.in_flight);
                     let turn_store = Arc::clone(&self.turn_store);
                     let gateway_mode = self.config.gateway_mode;
+                    let personality = self.config.personality.clone();
                     thread::spawn(move || {
                         if let Err(e) =
-                            handle_connection(stream, in_flight, turn_store, gateway_mode)
+                            handle_connection(stream, in_flight, turn_store, gateway_mode, &personality)
                         {
                             eprintln!("[agent] Connection error: {}", e);
                         }
@@ -104,6 +108,7 @@ fn handle_connection(
     in_flight: Arc<Mutex<HashMap<String, mpsc::Sender<()>>>>,
     turn_store: Arc<TurnStateStore>,
     gateway_mode: bool,
+    personality: &str,
 ) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut writer = stream;
@@ -161,6 +166,7 @@ fn handle_connection(
         let worker_config = WorkerConfig {
             gateway_mode,
             turn_store: Arc::clone(&turn_store),
+            personality: personality.to_string(),
         };
 
         // Spawn worker and collect events
@@ -207,6 +213,17 @@ pub fn run_gateway_mode(socket_path: &str) -> std::io::Result<()> {
     let server = AgentServer::new(AgentServerConfig {
         socket_path: socket_path.to_string(),
         gateway_mode: true,
+        ..Default::default()
+    });
+    server.run()
+}
+
+/// Run the agent server with a specific personality
+pub fn run_with_personality(socket_path: &str, gateway_mode: bool, personality: &str) -> std::io::Result<()> {
+    let server = AgentServer::new(AgentServerConfig {
+        socket_path: socket_path.to_string(),
+        gateway_mode,
+        personality: personality.to_string(),
         ..Default::default()
     });
     server.run()

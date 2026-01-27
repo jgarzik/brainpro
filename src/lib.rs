@@ -16,6 +16,7 @@ pub mod gateway_client;
 pub mod hooks;
 pub mod llm;
 pub mod model_routing;
+pub mod personality;
 pub mod plan;
 pub mod policy;
 pub mod protocol;

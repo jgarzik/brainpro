@@ -4,13 +4,14 @@
 //! from the gateway via a Unix socket and streaming NDJSON events back.
 //!
 //! Usage:
-//!   brainpro-agent [--socket /path/to/socket] [--gateway-mode]
+//!   brainpro-agent [--socket /path/to/socket] [--gateway-mode] [--personality mrcode|mrbot]
 //!
 //! Environment variables:
 //!   BRAINPRO_AGENT_SOCKET - Path to Unix socket (default: /run/brainpro.sock)
 //!   BRAINPRO_GATEWAY_MODE - Enable gateway mode (yields on ask decisions)
+//!   BRAINPRO_PERSONALITY - Personality to use (mrcode or mrbot, default: mrbot)
 
-use brainpro::agent_service::server::{run_gateway_mode, run_with_socket};
+use brainpro::agent_service::server::run_with_personality;
 use std::env;
 
 fn main() {
@@ -20,16 +21,18 @@ fn main() {
     // Parse socket path from args or environment
     let socket_path = parse_socket_path();
     let gateway_mode = parse_gateway_mode();
+    let personality = parse_personality();
 
     eprintln!("brainpro-agent starting...");
     eprintln!("Socket: {}", socket_path);
     eprintln!("Gateway mode: {}", gateway_mode);
+    eprintln!("Personality: {}", personality);
 
     // Run the server
     let result = if gateway_mode {
-        run_gateway_mode(&socket_path)
+        run_with_personality(&socket_path, true, &personality)
     } else {
-        run_with_socket(&socket_path)
+        run_with_personality(&socket_path, false, &personality)
     };
 
     if let Err(e) = result {
@@ -72,4 +75,22 @@ fn parse_gateway_mode() -> bool {
 
     // Default: gateway mode enabled (required for permission prompts)
     true
+}
+
+fn parse_personality() -> String {
+    // Check command line args first
+    let args: Vec<String> = env::args().collect();
+    for i in 0..args.len() {
+        if args[i] == "--personality" && i + 1 < args.len() {
+            return args[i + 1].clone();
+        }
+    }
+
+    // Check environment variable
+    if let Ok(personality) = env::var("BRAINPRO_PERSONALITY") {
+        return personality;
+    }
+
+    // Default: mrbot for gateway mode
+    "mrbot".to_string()
 }

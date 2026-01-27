@@ -23,6 +23,8 @@ pub struct WorkerConfig {
     pub gateway_mode: bool,
     /// Turn state store for persistence
     pub turn_store: Arc<TurnStateStore>,
+    /// Personality to use (mrcode or mrbot)
+    pub personality: String,
 }
 
 impl Default for WorkerConfig {
@@ -30,6 +32,7 @@ impl Default for WorkerConfig {
         Self {
             gateway_mode: false,
             turn_store: Arc::new(TurnStateStore::default()),
+            personality: "mrbot".to_string(),
         }
     }
 }

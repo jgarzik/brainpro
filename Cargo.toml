@@ -15,6 +15,10 @@ path = "src/bin/gateway.rs"
 name = "brainpro-agent"
 path = "src/bin/agent_daemon.rs"
 
+[[bin]]
+name = "yo"
+path = "src/bin/yo.rs"
+
 [dependencies]
 tokio = { version = "1", features = ["full", "net"] }
 tokio-tungstenite = "0.24"

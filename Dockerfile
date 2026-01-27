@@ -1,9 +1,23 @@
-# Brainpro multi-stage Docker build
-# Runs both gateway and agent daemons via supervisord
+# syntax=docker/dockerfile:1
 
-FROM rust:1.83-slim-bookworm as builder
-
+# =============================================================================
+# Stage 1: Chef - Install cargo-chef for dependency caching
+# =============================================================================
+FROM rust:1.88-slim-bookworm AS chef
+RUN cargo install cargo-chef
 WORKDIR /app
+
+# =============================================================================
+# Stage 2: Planner - Generate recipe.json (dependency manifest)
+# =============================================================================
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# =============================================================================
+# Stage 3: Builder - Build dependencies (cached), then build application
+# =============================================================================
+FROM chef AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -11,13 +25,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy source code
-COPY . .
+# Copy recipe and build dependencies first (cached layer)
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 
-# Build release binaries
+# Copy source and build the application
+COPY . .
 RUN cargo build --release
 
-# Runtime image
+# =============================================================================
+# Stage 4: Runtime - Minimal image with supervisor for gateway+agent
+# =============================================================================
 FROM debian:bookworm-slim
 
 # Create non-root user

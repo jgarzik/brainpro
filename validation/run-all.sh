@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run all brainpro validation tests
+# Run all brainpro validation tests (Docker Mode)
 
 set -e
 
@@ -9,18 +9,39 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 # Source common functions
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/assertions.sh"
+source "$SCRIPT_DIR/lib/docker.sh"
 
-echo "=== brainpro Validation Suite ==="
+echo "=== brainpro Validation Suite (Docker Mode) ==="
 echo ""
+
+# Track Docker state for cleanup
+DOCKER_STARTED=0
+
+cleanup() {
+    if [ $DOCKER_STARTED -eq 1 ]; then
+        echo ""
+        echo "Cleaning up Docker..."
+        stop_docker
+    fi
+}
+trap cleanup EXIT INT TERM
 
 # Check prerequisites
 check_brainpro_binary
 check_api_key
 
+# Start Docker (API keys passed via environment variables)
+start_docker || { echo "Failed to start Docker"; exit 1; }
+DOCKER_STARTED=1
+
+# Export gateway URL for test functions
+export BRAINPRO_GATEWAY_URL="ws://localhost:18789/ws"
+
 echo "Results will be saved to: $RESULTS_DIR"
 echo ""
 
 # Categories to run (in order)
+# Note: 20-gateway-basic and 21-agent-daemon removed - Docker handles startup
 CATEGORIES=(
     "01-tools"
     "02-exploration"
