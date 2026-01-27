@@ -125,7 +125,10 @@ run_brainpro_repl_expect() {
 
 # Reset the scratch directory
 reset_scratch() {
-    rm -rf "$SCRATCH_DIR"
+    # Use docker to clean files that may be owned by container user (uid 999)
+    docker run --rm -v "$SCRATCH_DIR:/scratch" alpine sh -c \
+        "rm -rf /scratch/* /scratch/.[!.]* 2>/dev/null; chown -R 1000:1000 /scratch" 2>/dev/null || true
+    rm -rf "$SCRATCH_DIR" 2>/dev/null || true
     mkdir -p "$SCRATCH_DIR"
     echo "Scratch directory reset: $SCRATCH_DIR" >> "$TEST_LOG"
 }

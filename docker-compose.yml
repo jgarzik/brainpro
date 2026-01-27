@@ -10,13 +10,13 @@ services:
       - brainpro-data:/app/data
       - brainpro-logs:/app/logs
       - ./fixtures:/app/fixtures:ro
+      - ./fixtures/scratch:/app/scratch
       - ./workspace:/app/workspace
     tmpfs:
       - /run:mode=1777,size=10M
       - /var/run:mode=1777,size=1M
       - /var/log/supervisor:mode=1777,size=10M
       - /tmp:mode=1777,size=100M
-      - /app/scratch:mode=1777,size=50M
     working_dir: /app/workspace
     environment:
       - BRAINPRO_DATA_DIR=/app/data
