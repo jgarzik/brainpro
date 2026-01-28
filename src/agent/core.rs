@@ -361,6 +361,13 @@ pub fn run_loop<H: AgentHooks>(
     for iteration in 1..=max_iterations {
         trace(ctx, "ITER", &format!("Starting iteration {}", iteration));
 
+        // Log iteration start for debugging (tool count will be 0 until we get response)
+        let _ = ctx.transcript.borrow_mut().iteration_info(
+            iteration as u32,
+            0,
+            "awaiting_response"
+        );
+
         // Auto-compaction: check if context is approaching limit
         {
             let context_config = &ctx.config.borrow().context;
@@ -481,6 +488,14 @@ pub fn run_loop<H: AgentHooks>(
             "tool_calls": tool_calls
         });
         messages.push(assistant_msg);
+
+        // Log iteration with actual tool count
+        let first_tool = tool_calls.first().map(|tc| tc.function.name.as_str()).unwrap_or("none");
+        let _ = ctx.transcript.borrow_mut().iteration_info(
+            iteration as u32,
+            tool_calls.len(),
+            first_tool
+        );
 
         // Parse all tool calls first, handling JSON parse errors
         let mut parsed_calls: Vec<(&llm::ToolCall, Result<Value, String>)> = tool_calls
