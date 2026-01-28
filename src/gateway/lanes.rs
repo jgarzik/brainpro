@@ -451,8 +451,10 @@ mod tests {
 
     #[test]
     fn test_lane_manager_concurrency_limit() {
-        let mut config = LaneConfig::default();
-        config.main_concurrency = 1;
+        let config = LaneConfig {
+            main_concurrency: 1,
+            ..LaneConfig::default()
+        };
         let manager = LaneManager::new(config);
 
         // Enqueue two main requests
@@ -480,8 +482,10 @@ mod tests {
 
     #[test]
     fn test_lane_manager_queue_full() {
-        let mut config = LaneConfig::default();
-        config.max_queue_depth = 2;
+        let config = LaneConfig {
+            max_queue_depth: 2,
+            ..LaneConfig::default()
+        };
         let manager = LaneManager::new(config);
 
         manager

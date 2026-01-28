@@ -67,6 +67,9 @@ struct Args {
         help = "Maximum agent iterations per turn"
     )]
     max_turns: Option<usize>,
+
+    #[arg(long, help = "Dump assembled system prompt before LLM call")]
+    dump_prompt: bool,
 }
 
 /// Get the path to the history file
@@ -171,6 +174,7 @@ fn main() -> Result<()> {
         optimize: args.optimize,
         resume: None,
         gateway: None,
+        dump_prompt: args.dump_prompt,
     };
 
     // Initialize components

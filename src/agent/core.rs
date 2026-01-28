@@ -392,6 +392,11 @@ pub fn run_loop<H: AgentHooks>(
         // Build system prompt via hooks
         let system_prompt = hooks.build_system_prompt(ctx, in_planning_mode);
 
+        // Dump system prompt if requested (only on first iteration)
+        if ctx.args.dump_prompt && iteration == 1 {
+            eprintln!("=== SYSTEM PROMPT ===\n{}\n=== END SYSTEM PROMPT ===", system_prompt);
+        }
+
         // Make LLM request
         let response = {
             let mut backends = ctx.backends.borrow_mut();
@@ -402,6 +407,14 @@ pub fn run_loop<H: AgentHooks>(
                 "content": system_prompt
             })];
             req_messages.extend(messages.clone());
+
+            // Inject continuation reminder after iteration 1 to encourage task completion
+            if iteration > 1 {
+                req_messages.push(json!({
+                    "role": "user",
+                    "content": "<system-reminder>Continue with your tasks. Don't stop until the original request is fully addressed.</system-reminder>"
+                }));
+            }
 
             let request = llm::ChatRequest {
                 model: target.model.clone(),

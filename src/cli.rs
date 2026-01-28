@@ -110,6 +110,9 @@ pub struct Args {
         help = "Connect via gateway WebSocket (e.g., ws://localhost:18789/ws)"
     )]
     pub gateway: Option<String>,
+
+    #[arg(long, help = "Dump assembled system prompt before LLM call")]
+    pub dump_prompt: bool,
 }
 
 impl Default for Args {
@@ -135,6 +138,7 @@ impl Default for Args {
             optimize: false,
             resume: None,
             gateway: None,
+            dump_prompt: false,
         }
     }
 }
