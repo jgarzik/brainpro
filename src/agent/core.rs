@@ -10,15 +10,72 @@
 
 use crate::agent::tool_executor::{self, DispatchResult};
 use crate::cli::Context;
+use crate::compact;
 use crate::llm::{self, LlmClient};
 use crate::plan::{self, PlanPhase};
 use crate::tool_display;
 use anyhow::Result;
 use serde_json::{json, Value};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::io::{self, Write};
 
 /// Default maximum iterations per turn
 pub const DEFAULT_MAX_ITERATIONS: usize = 12;
+
+/// Doom loop detection threshold - break after this many identical tool calls
+const DOOM_LOOP_THRESHOLD: usize = 3;
+
+/// Tools that are safe to run in parallel (read-only, no side effects)
+const PURE_TOOLS: &[&str] = &["Read", "Glob", "Search", "Grep"];
+
+/// Hash a tool call for doom loop detection
+fn hash_tool_call(name: &str, args: &Value) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    name.hash(&mut hasher);
+    // Use string representation of args for consistent hashing
+    args.to_string().hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Check if a tool is pure (read-only, parallelizable)
+fn is_pure_tool(name: &str) -> bool {
+    PURE_TOOLS.contains(&name)
+}
+
+/// Doom loop detector using a ring buffer of recent tool calls
+#[derive(Debug, Default)]
+struct DoomLoopDetector {
+    recent_calls: Vec<u64>,
+}
+
+impl DoomLoopDetector {
+    fn new() -> Self {
+        Self {
+            recent_calls: Vec::with_capacity(DOOM_LOOP_THRESHOLD),
+        }
+    }
+
+    /// Record a tool call and return true if doom loop detected
+    fn record(&mut self, hash: u64) -> bool {
+        self.recent_calls.push(hash);
+
+        // Only check for doom loop if we have enough calls
+        if self.recent_calls.len() < DOOM_LOOP_THRESHOLD {
+            return false;
+        }
+
+        // Check if the last DOOM_LOOP_THRESHOLD calls are identical
+        let start = self.recent_calls.len() - DOOM_LOOP_THRESHOLD;
+        let recent = &self.recent_calls[start..];
+        recent.iter().all(|h| *h == hash)
+    }
+
+    /// Reset after a different call breaks the pattern
+    fn reset(&mut self) {
+        self.recent_calls.clear();
+    }
+}
 
 /// Configuration for the agent loop
 #[derive(Debug, Clone)]
@@ -296,8 +353,35 @@ pub fn run_loop<H: AgentHooks>(
     // Use configured max_iterations
     let max_iterations = ctx.args.max_turns.unwrap_or(config.max_iterations);
 
+    // Initialize doom loop detector
+    let mut doom_detector = DoomLoopDetector::new();
+
     for iteration in 1..=max_iterations {
         trace(ctx, "ITER", &format!("Starting iteration {}", iteration));
+
+        // Auto-compaction: check if context is approaching limit
+        {
+            let context_config = &ctx.config.borrow().context;
+            if compact::needs_compaction(messages, context_config) {
+                trace(ctx, "COMPACT", "Auto-compacting context");
+                let mut backends = ctx.backends.borrow_mut();
+                if let Ok(client) = backends.get_client(&target.backend) {
+                    match compact::compact_messages(messages, context_config, client, &target.model)
+                    {
+                        Ok((compacted, result)) => {
+                            eprintln!(
+                                "[auto-compact] {}",
+                                compact::format_result(&result)
+                            );
+                            *messages = compacted;
+                        }
+                        Err(e) => {
+                            eprintln!("[auto-compact] Failed: {}", e);
+                        }
+                    }
+                }
+            }
+        }
 
         // Build system prompt via hooks
         let system_prompt = hooks.build_system_prompt(ctx, in_planning_mode);
@@ -399,10 +483,73 @@ pub fn run_loop<H: AgentHooks>(
         });
         messages.push(assistant_msg);
 
-        // Execute tool calls
-        for tc in tool_calls {
+        // Parse all tool calls first, handling JSON parse errors
+        let mut parsed_calls: Vec<(&llm::ToolCall, Result<Value, String>)> = tool_calls
+            .iter()
+            .map(|tc| {
+                let args_result = serde_json::from_str(&tc.function.arguments)
+                    .map_err(|e| format!("Invalid JSON arguments: {}", e));
+                (tc, args_result)
+            })
+            .collect();
+
+        // Separate pure (parallelizable) vs effectful tools
+        let (pure_calls, effectful_calls): (Vec<_>, Vec<_>) = parsed_calls
+            .drain(..)
+            .partition(|(tc, _)| is_pure_tool(&tc.function.name));
+
+        // Execute pure tools in parallel (conceptually - sync for now)
+        // TODO: Convert to actual async parallel execution when agent loop goes async
+        let mut tool_results: Vec<(String, String, Value)> = Vec::new();
+
+        for (tc, args_result) in pure_calls.into_iter().chain(effectful_calls.into_iter()) {
             let name = &tc.function.name;
-            let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or(json!({}));
+
+            // Handle JSON parse errors - return error to LLM so it can learn
+            let args = match args_result {
+                Ok(a) => a,
+                Err(parse_error) => {
+                    turn_result.stats.tool_uses += 1;
+                    let error_result = json!({
+                        "error": {
+                            "code": "invalid_arguments",
+                            "message": parse_error
+                        }
+                    });
+                    eprintln!(
+                        "{}",
+                        tool_display::format_tool_result(name, &error_result)
+                    );
+                    tool_results.push((tc.id.clone(), name.clone(), error_result));
+                    continue;
+                }
+            };
+
+            // Doom loop detection
+            let call_hash = hash_tool_call(name, &args);
+            if doom_detector.record(call_hash) {
+                eprintln!(
+                    "⚠️  Doom loop detected: {} called {} times with same arguments. Breaking.",
+                    name, DOOM_LOOP_THRESHOLD
+                );
+                let error_result = json!({
+                    "error": {
+                        "code": "doom_loop_detected",
+                        "message": format!(
+                            "Tool '{}' called {} times with identical arguments. \
+                             This appears to be a stuck loop. Please try a different approach.",
+                            name, DOOM_LOOP_THRESHOLD
+                        )
+                    }
+                });
+                tool_results.push((tc.id.clone(), name.clone(), error_result));
+
+                // Set flag to break outer loop (results will be added below)
+                turn_result.response_text = Some(
+                    "Agent stopped due to doom loop (repeated identical tool calls).".to_string(),
+                );
+                break;
+            }
 
             turn_result.stats.tool_uses += 1;
 
@@ -457,11 +604,7 @@ pub fn run_loop<H: AgentHooks>(
             verbose(ctx, &format!("Tool result: {} ok={}", name, ok));
             eprintln!("{}", tool_display::format_tool_result(name, &result));
 
-            messages.push(json!({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": serde_json::to_string(&result)?
-            }));
+            tool_results.push((tc.id.clone(), name.clone(), result));
 
             // Break if pending question
             if turn_result.pending_question.is_some() {
@@ -469,8 +612,25 @@ pub fn run_loop<H: AgentHooks>(
             }
         }
 
-        // Break outer loop if pending question
+        // Add all tool results to messages
+        for (tool_id, _tool_name, result) in tool_results {
+            messages.push(json!({
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": serde_json::to_string(&result)?
+            }));
+        }
+
+        // Break outer loop if pending question or doom loop
         if turn_result.pending_question.is_some() {
+            break;
+        }
+        if turn_result
+            .response_text
+            .as_ref()
+            .map(|s| s.contains("doom loop"))
+            .unwrap_or(false)
+        {
             break;
         }
     }

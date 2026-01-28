@@ -116,11 +116,20 @@ mod tests {
 
     #[test]
     fn test_apply_default_target_venice() {
-        let mut cfg = Config::default();
+        // Save current env state
+        let original = env::var("VENICE_API_KEY").ok();
+
         // Temporarily set env var
         env::set_var("VENICE_API_KEY", "test");
+        let mut cfg = Config::default();
         apply_default_target(&mut cfg);
-        env::remove_var("VENICE_API_KEY");
+
+        // Restore original state
+        if let Some(k) = original {
+            env::set_var("VENICE_API_KEY", k);
+        } else {
+            env::remove_var("VENICE_API_KEY");
+        }
 
         assert!(cfg.default_target.is_some());
         assert!(cfg.default_target.unwrap().contains("@venice"));
@@ -128,14 +137,35 @@ mod tests {
 
     #[test]
     fn test_apply_default_target_no_keys() {
-        let mut cfg = Config::default();
-        // Ensure no keys are set
+        // Save current env state
+        let venice_key = env::var("VENICE_API_KEY").ok();
+        let venice_key_lc = env::var("venice_api_key").ok();
+        let openai_key = env::var("OPENAI_API_KEY").ok();
+        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
+
+        // Remove all keys
         env::remove_var("VENICE_API_KEY");
         env::remove_var("venice_api_key");
         env::remove_var("OPENAI_API_KEY");
         env::remove_var("ANTHROPIC_API_KEY");
 
+        let mut cfg = Config::default();
         apply_default_target(&mut cfg);
+
+        // Restore original env state before asserting
+        if let Some(k) = venice_key {
+            env::set_var("VENICE_API_KEY", k);
+        }
+        if let Some(k) = venice_key_lc {
+            env::set_var("venice_api_key", k);
+        }
+        if let Some(k) = openai_key {
+            env::set_var("OPENAI_API_KEY", k);
+        }
+        if let Some(k) = anthropic_key {
+            env::set_var("ANTHROPIC_API_KEY", k);
+        }
+
         assert!(cfg.default_target.is_none());
     }
 

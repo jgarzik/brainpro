@@ -2,6 +2,7 @@
 
 use crate::{
     cli::Context,
+    compact,
     llm::{self, LlmClient, StreamEvent},
     plan::{self, PlanPhase},
     policy::Decision,
@@ -9,9 +10,57 @@ use crate::{
 };
 use anyhow::Result;
 use serde_json::{json, Value};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::io::{self, Write};
 
 const MAX_ITERATIONS: usize = 12;
+
+/// Doom loop detection threshold - break after this many identical tool calls
+const DOOM_LOOP_THRESHOLD: usize = 3;
+
+/// Tools that are safe to run in parallel (read-only, no side effects)
+const PURE_TOOLS: &[&str] = &["Read", "Glob", "Search", "Grep"];
+
+/// Hash a tool call for doom loop detection
+fn hash_tool_call(name: &str, args: &Value) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    name.hash(&mut hasher);
+    args.to_string().hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Check if a tool is pure (read-only, parallelizable)
+fn is_pure_tool(name: &str) -> bool {
+    PURE_TOOLS.contains(&name)
+}
+
+/// Doom loop detector using a ring buffer of recent tool calls
+#[derive(Debug, Default)]
+struct DoomLoopDetector {
+    recent_calls: Vec<u64>,
+}
+
+impl DoomLoopDetector {
+    fn new() -> Self {
+        Self {
+            recent_calls: Vec::with_capacity(DOOM_LOOP_THRESHOLD),
+        }
+    }
+
+    /// Record a tool call and return true if doom loop detected
+    fn record(&mut self, hash: u64) -> bool {
+        self.recent_calls.push(hash);
+
+        if self.recent_calls.len() < DOOM_LOOP_THRESHOLD {
+            return false;
+        }
+
+        let start = self.recent_calls.len() - DOOM_LOOP_THRESHOLD;
+        let recent = &self.recent_calls[start..];
+        recent.iter().all(|h| *h == hash)
+    }
+}
 
 /// Statistics collected during command execution
 #[derive(Debug, Default, Clone)]
@@ -181,8 +230,35 @@ pub fn run_turn_sync(ctx: &Context, user_input: &str, messages: &mut Vec<Value>)
     // Use max_turns from CLI if provided, otherwise default
     let max_iterations = ctx.args.max_turns.unwrap_or(MAX_ITERATIONS);
 
+    // Initialize doom loop detector
+    let mut doom_detector = DoomLoopDetector::new();
+
     for iteration in 1..=max_iterations {
         trace(ctx, "ITER", &format!("Starting iteration {}", iteration));
+
+        // Auto-compaction: check if context is approaching limit
+        {
+            let context_config = &ctx.config.borrow().context;
+            if compact::needs_compaction(messages, context_config) {
+                trace(ctx, "COMPACT", "Auto-compacting context");
+                let mut backends = ctx.backends.borrow_mut();
+                if let Ok(client) = backends.get_client(&target.backend) {
+                    match compact::compact_messages(messages, context_config, client, &target.model)
+                    {
+                        Ok((compacted, result)) => {
+                            eprintln!(
+                                "[auto-compact] {}",
+                                compact::format_result(&result)
+                            );
+                            *messages = compacted;
+                        }
+                        Err(e) => {
+                            eprintln!("[auto-compact] Failed: {}", e);
+                        }
+                    }
+                }
+            }
+        }
 
         // Get client for target's backend (lazy-loaded)
         let response = {
@@ -350,7 +426,55 @@ pub fn run_turn_sync(ctx: &Context, user_input: &str, messages: &mut Vec<Value>)
 
         for tc in tool_calls {
             let name = &tc.function.name;
-            let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or(json!({}));
+
+            // Handle JSON parse errors - return error to LLM so it can learn
+            let args: Value = match serde_json::from_str(&tc.function.arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    turn_result.stats.tool_uses += 1;
+                    let error_result = json!({
+                        "error": {
+                            "code": "invalid_arguments",
+                            "message": format!("Invalid JSON arguments: {}", e)
+                        }
+                    });
+                    eprintln!("{}", tool_display::format_tool_result(name, &error_result));
+                    messages.push(json!({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": serde_json::to_string(&error_result)?
+                    }));
+                    continue;
+                }
+            };
+
+            // Doom loop detection
+            let call_hash = hash_tool_call(name, &args);
+            if doom_detector.record(call_hash) {
+                eprintln!(
+                    "⚠️  Doom loop detected: {} called {} times with same arguments. Breaking.",
+                    name, DOOM_LOOP_THRESHOLD
+                );
+                let error_result = json!({
+                    "error": {
+                        "code": "doom_loop_detected",
+                        "message": format!(
+                            "Tool '{}' called {} times with identical arguments. \
+                             This appears to be a stuck loop. Please try a different approach.",
+                            name, DOOM_LOOP_THRESHOLD
+                        )
+                    }
+                });
+                messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": serde_json::to_string(&error_result)?
+                }));
+                turn_result.response_text = Some(
+                    "Agent stopped due to doom loop (repeated identical tool calls).".to_string(),
+                );
+                break;
+            }
 
             // Count this tool use
             turn_result.stats.tool_uses += 1;
@@ -534,8 +658,16 @@ pub fn run_turn_sync(ctx: &Context, user_input: &str, messages: &mut Vec<Value>)
             }
         }
 
-        // If we have a pending question, break out of the iteration loop
+        // If we have a pending question or doom loop, break out of the iteration loop
         if turn_result.pending_question.is_some() {
+            break;
+        }
+        if turn_result
+            .response_text
+            .as_ref()
+            .map(|s| s.contains("doom loop"))
+            .unwrap_or(false)
+        {
             break;
         }
     }
@@ -676,8 +808,35 @@ pub async fn run_turn(
 
     let max_iterations = ctx.args.max_turns.unwrap_or(MAX_ITERATIONS);
 
+    // Initialize doom loop detector
+    let mut doom_detector = DoomLoopDetector::new();
+
     for iteration in 1..=max_iterations {
         trace(ctx, "ITER", &format!("Starting iteration {}", iteration));
+
+        // Auto-compaction: check if context is approaching limit
+        {
+            let context_config = &ctx.config.borrow().context;
+            if compact::needs_compaction(messages, context_config) {
+                trace(ctx, "COMPACT", "Auto-compacting context");
+                let mut backends = ctx.backends.borrow_mut();
+                if let Ok(client) = backends.get_client(&target.backend) {
+                    match compact::compact_messages(messages, context_config, client, &target.model)
+                    {
+                        Ok((compacted, result)) => {
+                            eprintln!(
+                                "[auto-compact] {}",
+                                compact::format_result(&result)
+                            );
+                            *messages = compacted;
+                        }
+                        Err(e) => {
+                            eprintln!("[auto-compact] Failed: {}", e);
+                        }
+                    }
+                }
+            }
+        }
 
         // Get streaming client and make request
         let response = {
@@ -884,7 +1043,55 @@ pub async fn run_turn(
         // Process tool calls (same as sync version)
         for tc in tool_calls {
             let name = &tc.function.name;
-            let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or(json!({}));
+
+            // Handle JSON parse errors - return error to LLM so it can learn
+            let args: Value = match serde_json::from_str(&tc.function.arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    turn_result.stats.tool_uses += 1;
+                    let error_result = json!({
+                        "error": {
+                            "code": "invalid_arguments",
+                            "message": format!("Invalid JSON arguments: {}", e)
+                        }
+                    });
+                    eprintln!("{}", tool_display::format_tool_result(name, &error_result));
+                    messages.push(json!({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": serde_json::to_string(&error_result)?
+                    }));
+                    continue;
+                }
+            };
+
+            // Doom loop detection
+            let call_hash = hash_tool_call(name, &args);
+            if doom_detector.record(call_hash) {
+                eprintln!(
+                    "⚠️  Doom loop detected: {} called {} times with same arguments. Breaking.",
+                    name, DOOM_LOOP_THRESHOLD
+                );
+                let error_result = json!({
+                    "error": {
+                        "code": "doom_loop_detected",
+                        "message": format!(
+                            "Tool '{}' called {} times with identical arguments. \
+                             This appears to be a stuck loop. Please try a different approach.",
+                            name, DOOM_LOOP_THRESHOLD
+                        )
+                    }
+                });
+                messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": serde_json::to_string(&error_result)?
+                }));
+                turn_result.response_text = Some(
+                    "Agent stopped due to doom loop (repeated identical tool calls).".to_string(),
+                );
+                break;
+            }
 
             turn_result.stats.tool_uses += 1;
 
@@ -1049,7 +1256,16 @@ pub async fn run_turn(
             }
         }
 
+        // If we have a pending question or doom loop, break out of the iteration loop
         if turn_result.pending_question.is_some() {
+            break;
+        }
+        if turn_result
+            .response_text
+            .as_ref()
+            .map(|s| s.contains("doom loop"))
+            .unwrap_or(false)
+        {
             break;
         }
     }
@@ -1081,4 +1297,76 @@ pub async fn run_turn(
     }
 
     Ok(turn_result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doom_loop_detector_no_loop() {
+        let mut detector = DoomLoopDetector::new();
+
+        // Different calls shouldn't trigger
+        assert!(!detector.record(hash_tool_call("Read", &json!({"path": "a.txt"}))));
+        assert!(!detector.record(hash_tool_call("Read", &json!({"path": "b.txt"}))));
+        assert!(!detector.record(hash_tool_call("Read", &json!({"path": "c.txt"}))));
+    }
+
+    #[test]
+    fn test_doom_loop_detector_triggers() {
+        let mut detector = DoomLoopDetector::new();
+
+        let hash = hash_tool_call("Read", &json!({"path": "same.txt"}));
+
+        // First two calls shouldn't trigger
+        assert!(!detector.record(hash));
+        assert!(!detector.record(hash));
+        // Third identical call triggers
+        assert!(detector.record(hash));
+    }
+
+    #[test]
+    fn test_doom_loop_detector_reset_by_different_call() {
+        let mut detector = DoomLoopDetector::new();
+
+        let hash1 = hash_tool_call("Read", &json!({"path": "a.txt"}));
+        let hash2 = hash_tool_call("Read", &json!({"path": "b.txt"}));
+
+        // Two identical calls
+        assert!(!detector.record(hash1));
+        assert!(!detector.record(hash1));
+        // Different call breaks the pattern
+        assert!(!detector.record(hash2));
+        // Start over with first hash - need 3 more
+        assert!(!detector.record(hash1));
+        assert!(!detector.record(hash1));
+        // Third identical triggers
+        assert!(detector.record(hash1));
+    }
+
+    #[test]
+    fn test_hash_tool_call_different_args() {
+        let hash1 = hash_tool_call("Read", &json!({"path": "a.txt"}));
+        let hash2 = hash_tool_call("Read", &json!({"path": "b.txt"}));
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_hash_tool_call_different_tools() {
+        let hash1 = hash_tool_call("Read", &json!({"path": "a.txt"}));
+        let hash2 = hash_tool_call("Write", &json!({"path": "a.txt"}));
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_is_pure_tool() {
+        assert!(is_pure_tool("Read"));
+        assert!(is_pure_tool("Glob"));
+        assert!(is_pure_tool("Search"));
+        assert!(is_pure_tool("Grep"));
+        assert!(!is_pure_tool("Write"));
+        assert!(!is_pure_tool("Edit"));
+        assert!(!is_pure_tool("Bash"));
+    }
 }
