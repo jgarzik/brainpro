@@ -362,11 +362,10 @@ pub fn run_loop<H: AgentHooks>(
         trace(ctx, "ITER", &format!("Starting iteration {}", iteration));
 
         // Log iteration start for debugging (tool count will be 0 until we get response)
-        let _ = ctx.transcript.borrow_mut().iteration_info(
-            iteration as u32,
-            0,
-            "awaiting_response"
-        );
+        let _ =
+            ctx.transcript
+                .borrow_mut()
+                .iteration_info(iteration as u32, 0, "awaiting_response");
 
         // Auto-compaction: check if context is approaching limit
         {
@@ -394,7 +393,10 @@ pub fn run_loop<H: AgentHooks>(
 
         // Dump system prompt if requested (only on first iteration)
         if ctx.args.dump_prompt && iteration == 1 {
-            eprintln!("=== SYSTEM PROMPT ===\n{}\n=== END SYSTEM PROMPT ===", system_prompt);
+            eprintln!(
+                "=== SYSTEM PROMPT ===\n{}\n=== END SYSTEM PROMPT ===",
+                system_prompt
+            );
         }
 
         // Make LLM request
@@ -503,11 +505,14 @@ pub fn run_loop<H: AgentHooks>(
         messages.push(assistant_msg);
 
         // Log iteration with actual tool count
-        let first_tool = tool_calls.first().map(|tc| tc.function.name.as_str()).unwrap_or("none");
+        let first_tool = tool_calls
+            .first()
+            .map(|tc| tc.function.name.as_str())
+            .unwrap_or("none");
         let _ = ctx.transcript.borrow_mut().iteration_info(
             iteration as u32,
             tool_calls.len(),
-            first_tool
+            first_tool,
         );
 
         // Parse all tool calls first, handling JSON parse errors

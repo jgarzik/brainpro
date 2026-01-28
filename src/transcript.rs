@@ -75,7 +75,12 @@ impl Transcript {
     }
 
     /// Log iteration info for debugging agent loop behavior
-    pub fn iteration_info(&mut self, iteration: u32, tool_count: usize, pending: &str) -> Result<()> {
+    pub fn iteration_info(
+        &mut self,
+        iteration: u32,
+        tool_count: usize,
+        pending: &str,
+    ) -> Result<()> {
         self.log(
             "iteration",
             serde_json::json!({
