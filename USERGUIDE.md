@@ -68,6 +68,12 @@ yo -p "how does the permission system work?"
 | `--max-turns` | Max agent iterations (default: 12) |
 | `--trace` | Enable detailed tracing |
 | `--list-targets` | Show configured backends |
+| `--gateway <URL>` | Connect via WebSocket to gateway |
+| `--allowed-tools <RULE>` | Allow tool pattern |
+| `--disallowed-tools <RULE>` | Deny tool pattern |
+| `--ask-tools <RULE>` | Prompt for tool pattern |
+| `-O, --optimize` | Token-efficient output mode |
+| `--resume <ID>` | Resume previous session |
 
 ### REPL Commands
 

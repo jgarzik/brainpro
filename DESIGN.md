@@ -46,7 +46,7 @@ Client → WebSocket → brainpro-gateway → Unix socket → brainpro-agent →
 
 - Persistent daemon (`brainpro-agent`)
 - Gateway handles auth, WebSocket clients
-- 12+ tools including Task, AskUserQuestion, plan mode
+- 13 tools including Task, AskUserQuestion, plan mode
 - Yield/resume for approval flows
 
 ## Agent Loop
