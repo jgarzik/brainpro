@@ -1,6 +1,7 @@
 # brainpro
 
-A local agentic coding assistant. Vendor-neutral, multi-model routing—send coding to Claude, planning to Qwen, exploration to GPT.
+A local agentic coding assistant. Vendor-neutral, multi-model routing—send coding to Claude, planning to Qwen, exploration to GPT.<img width="401" height="387" alt="{FB75D017-3C33-4723-9372-A4980D3B7166}" src="https://github.com/user-attachments/assets/da60511a-496f-4ee0-802b-8d4725d03219" />
+
 
 ## Two Paths
 
