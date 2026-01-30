@@ -3,7 +3,12 @@
 # =============================================================================
 # Stage 1: Chef - Install cargo-chef for dependency caching
 # =============================================================================
-FROM rust:1.88-slim-bookworm AS chef
+FROM ubuntu:24.04 AS chef
+RUN apt-get update && apt-get install -y \
+    curl build-essential pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
 RUN cargo install cargo-chef
 WORKDIR /app
 
@@ -19,12 +24,6 @@ RUN cargo chef prepare --recipe-path recipe.json
 # =============================================================================
 FROM chef AS builder
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy recipe and build dependencies first (cached layer)
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
@@ -34,18 +33,21 @@ COPY . .
 RUN cargo build --release
 
 # =============================================================================
-# Stage 4: Runtime - Minimal image with supervisor for gateway+agent
+# Stage 4: Runtime - Ubuntu 24.04 with full development environment
 # =============================================================================
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
 # Create non-root user
 RUN groupadd -r brainpro && useradd -r -g brainpro brainpro
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    supervisor \
-    ca-certificates \
-    curl \
+# Install full development environment
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git ssh wget curl vim jq \
+    python3 python3-pip \
+    nodejs npm \
+    cmake gdb strace net-tools \
+    supervisor ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run /var/log/supervisor /app/data /app/logs /app/workspace /app/scratch /app/data/.brainpro \
     && chown -R brainpro:brainpro /app /run /var/log/supervisor
