@@ -112,9 +112,11 @@ pub fn build_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::env;
 
     #[test]
+    #[serial]
     fn test_apply_default_target_venice() {
         // Save current env state
         let original = env::var("VENICE_API_KEY").ok();
@@ -136,6 +138,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_apply_default_target_no_keys() {
         // Save current env state
         let venice_key = env::var("VENICE_API_KEY").ok();
