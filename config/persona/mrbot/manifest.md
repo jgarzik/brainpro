@@ -23,6 +23,7 @@ permission_mode: default
 
 1. identity.md (always)
 2. soul.md (always, persona & values)
-3. tooling.md (always)
-4. plan-mode.md (if plan_mode)
-5. optimize.md (if optimize_mode)
+3. agents.md (always, operating instructions)
+4. tooling.md (always)
+5. plan-mode.md (if plan_mode)
+6. optimize.md (if optimize_mode)

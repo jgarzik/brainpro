@@ -31,6 +31,16 @@ pub struct PromptContext {
     pub optimize_mode: bool,
     /// SOUL.md content for MrBot persona
     pub soul_content: Option<String>,
+    /// Workspace MEMORY.md content
+    pub workspace_memory: Option<String>,
+    /// Daily notes (filename, content) - today and yesterday
+    pub daily_notes: Vec<(String, String)>,
+    /// WORKING.md content - current task state
+    pub working_state: Option<String>,
+    /// BOOTSTRAP.md content - project onboarding/context
+    pub bootstrap_content: Option<String>,
+    /// Whether this is a subagent session (reduced context)
+    pub is_subagent: bool,
 }
 
 impl PromptContext {
@@ -45,18 +55,38 @@ impl PromptContext {
             .collect();
         let plan_mode = ctx.plan_mode.borrow().phase == crate::plan::PlanPhase::Planning;
 
+        // Load workspace context from .brainpro/ directory
+        let (workspace_memory, daily_notes, working_state, bootstrap_content) =
+            loader::load_workspace_context(&ctx.root);
+
         Self {
             working_dir: ctx.root.clone(),
             active_skills,
             plan_mode,
             optimize_mode: ctx.args.optimize,
             soul_content: None,
+            workspace_memory,
+            daily_notes,
+            working_state,
+            bootstrap_content,
+            is_subagent: false,
         }
     }
 
     /// Set the SOUL content
     pub fn with_soul(mut self, soul: Option<String>) -> Self {
         self.soul_content = soul;
+        self
+    }
+
+    /// Set as subagent session (reduced context)
+    pub fn as_subagent(mut self) -> Self {
+        self.is_subagent = true;
+        // Clear workspace context for subagents
+        self.workspace_memory = None;
+        self.daily_notes = Vec::new();
+        self.working_state = None;
+        self.bootstrap_content = None;
         self
     }
 }

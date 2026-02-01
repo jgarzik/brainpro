@@ -4,6 +4,7 @@
 //! Supports YAML frontmatter + Markdown body format.
 
 use anyhow::{anyhow, Result};
+use chrono::{Local, Duration};
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -237,6 +238,71 @@ fn should_include_section(section: &PromptSection, ctx: &PromptContext) -> bool 
     }
 }
 
+/// Maximum characters for workspace files (like OpenClaw: 20k chars)
+const MAX_WORKSPACE_FILE_CHARS: usize = 20_000;
+
+/// Truncate large content with head/tail split (70% head, 20% tail, 10% separator)
+fn truncate_content(content: &str, max_chars: usize) -> String {
+    if content.len() <= max_chars {
+        return content.to_string();
+    }
+
+    let head_chars = (max_chars as f64 * 0.7) as usize;
+    let tail_chars = (max_chars as f64 * 0.2) as usize;
+
+    let head: String = content.chars().take(head_chars).collect();
+    let tail: String = content.chars().rev().take(tail_chars).collect::<String>().chars().rev().collect();
+
+    let truncated_chars = content.len() - head_chars - tail_chars;
+    format!(
+        "{}\n\n[... {} characters truncated ...]\n\n{}",
+        head, truncated_chars, tail
+    )
+}
+
+/// Load workspace memory files from .brainpro/ directory
+pub fn load_workspace_context(working_dir: &Path) -> (Option<String>, Vec<(String, String)>, Option<String>, Option<String>) {
+    let brainpro_dir = working_dir.join(".brainpro");
+
+    // Load MEMORY.md
+    let memory_path = brainpro_dir.join("MEMORY.md");
+    let workspace_memory = fs::read_to_string(&memory_path)
+        .ok()
+        .map(|c| truncate_content(&c, MAX_WORKSPACE_FILE_CHARS));
+
+    // Load WORKING.md
+    let working_path = brainpro_dir.join("WORKING.md");
+    let working_state = fs::read_to_string(&working_path)
+        .ok()
+        .map(|c| truncate_content(&c, MAX_WORKSPACE_FILE_CHARS));
+
+    // Load BOOTSTRAP.md (project onboarding/context)
+    let bootstrap_path = brainpro_dir.join("BOOTSTRAP.md");
+    let bootstrap_content = fs::read_to_string(&bootstrap_path)
+        .ok()
+        .map(|c| truncate_content(&c, MAX_WORKSPACE_FILE_CHARS));
+
+    // Load daily notes (today and yesterday)
+    let mut daily_notes = Vec::new();
+    let memory_dir = brainpro_dir.join("memory");
+
+    if memory_dir.exists() {
+        let today = Local::now().format("%Y-%m-%d").to_string();
+        let yesterday = (Local::now() - Duration::days(1)).format("%Y-%m-%d").to_string();
+
+        for date in [today, yesterday] {
+            let filename = format!("{}.md", date);
+            let path = memory_dir.join(&filename);
+            if let Ok(content) = fs::read_to_string(&path) {
+                let truncated = truncate_content(&content, MAX_WORKSPACE_FILE_CHARS / 2);
+                daily_notes.push((filename, truncated));
+            }
+        }
+    }
+
+    (workspace_memory, daily_notes, working_state, bootstrap_content)
+}
+
 /// Build the complete system prompt from loaded config
 pub fn build_system_prompt(config: &PersonaConfig, ctx: &PromptContext) -> String {
     let mut prompt_parts = Vec::new();
@@ -262,6 +328,50 @@ pub fn build_system_prompt(config: &PersonaConfig, ctx: &PromptContext) -> Strin
             "## Active Skills\n{}",
             ctx.active_skills.join(", ")
         ));
+    }
+
+    // Add workspace context for main sessions (not subagents)
+    if !ctx.is_subagent {
+        let mut workspace_context_parts = Vec::new();
+
+        // Add BOOTSTRAP.md content (project onboarding - first for context)
+        if let Some(ref bootstrap) = ctx.bootstrap_content {
+            workspace_context_parts.push(format!(
+                "### Project Bootstrap (BOOTSTRAP.md)\n{}",
+                bootstrap
+            ));
+        }
+
+        // Add MEMORY.md content
+        if let Some(ref memory) = ctx.workspace_memory {
+            workspace_context_parts.push(format!(
+                "### Project Memory (MEMORY.md)\n{}",
+                memory
+            ));
+        }
+
+        // Add daily notes
+        for (filename, content) in &ctx.daily_notes {
+            workspace_context_parts.push(format!(
+                "### Daily Notes ({})\n{}",
+                filename, content
+            ));
+        }
+
+        // Add WORKING.md content
+        if let Some(ref working) = ctx.working_state {
+            workspace_context_parts.push(format!(
+                "### Current Task State (WORKING.md)\n{}",
+                working
+            ));
+        }
+
+        if !workspace_context_parts.is_empty() {
+            prompt_parts.push(format!(
+                "## Workspace Context\n\n{}",
+                workspace_context_parts.join("\n\n")
+            ));
+        }
     }
 
     prompt_parts.join("\n\n")
@@ -362,12 +472,17 @@ This is the body content."#;
             "Prompt should contain rendered persona name"
         );
         assert!(
-            prompt.contains("Personality & Values"),
+            prompt.contains("Who You Are"),
             "Prompt should contain soul section"
         );
         assert!(
             prompt.contains("Core Truths"),
             "Prompt should contain soul content"
+        );
+        // Verify agents.md content is included
+        assert!(
+            prompt.contains("Operating Instructions"),
+            "Prompt should contain agents section"
         );
     }
 
@@ -400,6 +515,73 @@ This is the body content."#;
         assert!(
             prompt.contains("AI-to-AI mode"),
             "Optimize mode should be included"
+        );
+    }
+
+    #[test]
+    fn test_truncate_content() {
+        // Small content should not be truncated
+        let small = "Hello, world!";
+        assert_eq!(truncate_content(small, 100), small);
+
+        // Large content should be truncated with head/tail
+        let large: String = "x".repeat(1000);
+        let truncated = truncate_content(&large, 100);
+        assert!(truncated.len() < 1000);
+        assert!(truncated.contains("characters truncated"));
+    }
+
+    #[test]
+    fn test_workspace_context_in_prompt() {
+        let config = load_persona("mrbot").expect("Failed to load mrbot");
+        let ctx = PromptContext {
+            workspace_memory: Some("This is the project memory.".to_string()),
+            working_state: Some("Currently working on feature X.".to_string()),
+            daily_notes: vec![
+                ("2024-01-15.md".to_string(), "Did some stuff.".to_string()),
+            ],
+            is_subagent: false,
+            ..Default::default()
+        };
+        let prompt = build_system_prompt(&config, &ctx);
+
+        // Verify workspace context is included
+        assert!(
+            prompt.contains("Workspace Context"),
+            "Prompt should contain workspace context section"
+        );
+        assert!(
+            prompt.contains("Project Memory"),
+            "Prompt should contain memory section"
+        );
+        assert!(
+            prompt.contains("This is the project memory"),
+            "Prompt should contain memory content"
+        );
+        assert!(
+            prompt.contains("Current Task State"),
+            "Prompt should contain working state section"
+        );
+    }
+
+    #[test]
+    fn test_subagent_no_workspace_context() {
+        let config = load_persona("mrbot").expect("Failed to load mrbot");
+        let ctx = PromptContext {
+            workspace_memory: Some("This is the project memory.".to_string()),
+            is_subagent: true,
+            ..Default::default()
+        };
+        let prompt = build_system_prompt(&config, &ctx);
+
+        // Subagents should NOT have workspace context
+        assert!(
+            !prompt.contains("Workspace Context"),
+            "Subagent prompt should NOT contain workspace context"
+        );
+        assert!(
+            !prompt.contains("This is the project memory"),
+            "Subagent prompt should NOT contain memory content"
         );
     }
 }
