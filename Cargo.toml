@@ -54,6 +54,17 @@ prometheus = "0.13"
 wait-timeout = "0.2"
 walkdir = "2"
 shell-words = "1.1"
+async-trait = "0.1"
+
+# Channel integrations (optional)
+teloxide = { version = "0.14", features = ["macros"], optional = true }
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "model", "rustls_backend"], optional = true }
+
+[features]
+default = []
+telegram = ["teloxide"]
+discord = ["serenity"]
+channels = ["telegram", "discord"]
 
 [dev-dependencies]
 tempfile = "3"

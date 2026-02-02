@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 pub mod agent_conn;
+pub mod channels;
 pub mod client_mgr;
 pub mod lanes;
 pub mod server;
