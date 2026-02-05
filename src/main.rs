@@ -1,6 +1,8 @@
 mod agent;
 mod agent_impl;
 mod agent_service;
+mod claude_api;
+mod claude_auth;
 mod backend;
 mod circuit_breaker;
 mod cli;

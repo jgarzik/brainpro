@@ -13,6 +13,9 @@ use serde_json::Value;
 use std::thread;
 use std::time::Duration;
 
+use crate::claude_api;
+use crate::config::ApiFormat;
+
 // Retry configuration for rate limiting and transient errors
 const MAX_RETRIES: u32 = 5;
 const INITIAL_BACKOFF_MS: u64 = 1000; // 1 second
@@ -189,12 +192,13 @@ pub struct Client {
     /// Will be zeroized on drop and won't leak via Debug/Display.
     api_key: SecretString,
     http_client: reqwest::blocking::Client,
+    api_format: ApiFormat,
 }
 
 impl Client {
     /// Create a new LLM client.
     /// The API key is stored as a SecretString for secure memory handling.
-    pub fn new(base_url: &str, api_key: SecretString) -> Self {
+    pub fn new(base_url: &str, api_key: SecretString, api_format: ApiFormat) -> Self {
         let http_client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(120))
             .pool_max_idle_per_host(10)
@@ -205,12 +209,12 @@ impl Client {
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
             http_client,
+            api_format,
         }
     }
 
     /// Internal sync implementation with retry logic
     fn chat_sync(&self, request: &ChatRequest) -> Result<LlmCallResult> {
-        let url = format!("{}/chat/completions", self.base_url);
         let start = std::time::Instant::now();
 
         let mut attempt = 0;
@@ -220,23 +224,56 @@ impl Client {
         loop {
             attempt += 1;
 
-            let resp = self
-                .http_client
-                .post(&url)
-                .header(
-                    "Authorization",
-                    format!("Bearer {}", self.api_key.expose_secret()),
-                )
-                .header("Content-Type", "application/json")
-                .json(request)
-                .send();
+            let resp = match self.api_format {
+                ApiFormat::Claude => {
+                    let key = self.api_key.expose_secret();
+                    let oauth = claude_api::is_oauth_token(key);
+                    let url = claude_api::messages_url(&self.base_url, oauth);
+                    let translate = if oauth {
+                        claude_api::translate_request_oauth
+                    } else {
+                        claude_api::translate_request
+                    };
+                    let body = translate(
+                        &request.model,
+                        &request.messages,
+                        request.tools.as_deref(),
+                        request.tool_choice.as_deref(),
+                        false,
+                    );
+                    let mut req_builder = self.http_client.post(&url);
+                    for (name, value) in claude_api::build_headers(key) {
+                        req_builder = req_builder.header(name, value);
+                    }
+                    req_builder.json(&body).send()
+                }
+                ApiFormat::OpenAI => {
+                    let url = format!("{}/chat/completions", self.base_url);
+                    self.http_client
+                        .post(&url)
+                        .header(
+                            "Authorization",
+                            format!("Bearer {}", self.api_key.expose_secret()),
+                        )
+                        .header("Content-Type", "application/json")
+                        .json(request)
+                        .send()
+                }
+            };
 
             match resp {
                 Ok(response) => {
                     let status = response.status();
 
                     if status.is_success() {
-                        let body: ChatResponse = response.json()?;
+                        let body = match self.api_format {
+                            ApiFormat::Claude => {
+                                let claude_resp: claude_api::ClaudeResponse =
+                                    response.json()?;
+                                claude_api::translate_response(claude_resp)
+                            }
+                            ApiFormat::OpenAI => response.json::<ChatResponse>()?,
+                        };
                         return Ok(LlmCallResult {
                             response: body,
                             latency_ms: start.elapsed().as_millis() as u64,
@@ -342,10 +379,11 @@ pub struct StreamingClient {
     base_url: String,
     api_key: SecretString,
     http_client: reqwest::Client,
+    api_format: ApiFormat,
 }
 
 impl StreamingClient {
-    pub fn new(base_url: &str, api_key: SecretString) -> Self {
+    pub fn new(base_url: &str, api_key: SecretString, api_format: ApiFormat) -> Self {
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(300)) // Longer timeout for streaming
             .pool_max_idle_per_host(10)
@@ -356,12 +394,25 @@ impl StreamingClient {
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
             http_client,
+            api_format,
         }
     }
 
     /// Stream chat completions, sending events to the provided channel.
     /// Accumulates the full response and returns it when complete.
     pub async fn chat_stream(
+        &self,
+        request: &ChatRequest,
+        event_tx: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<ChatResponse> {
+        match self.api_format {
+            ApiFormat::Claude => self.chat_stream_claude(request, event_tx).await,
+            ApiFormat::OpenAI => self.chat_stream_openai(request, event_tx).await,
+        }
+    }
+
+    /// OpenAI-compatible streaming implementation.
+    async fn chat_stream_openai(
         &self,
         request: &ChatRequest,
         event_tx: tokio::sync::mpsc::Sender<StreamEvent>,
@@ -538,6 +589,97 @@ impl StreamingClient {
             }],
             usage: final_usage,
         })
+    }
+
+    /// Anthropic Messages API streaming implementation.
+    async fn chat_stream_claude(
+        &self,
+        request: &ChatRequest,
+        event_tx: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<ChatResponse> {
+        use futures::StreamExt;
+
+        let key = self.api_key.expose_secret();
+        let oauth = claude_api::is_oauth_token(key);
+        let url = claude_api::messages_url(&self.base_url, oauth);
+        let translate = if oauth {
+            claude_api::translate_request_oauth
+        } else {
+            claude_api::translate_request
+        };
+        let body = translate(
+            &request.model,
+            &request.messages,
+            request.tools.as_deref(),
+            request.tool_choice.as_deref(),
+            true,
+        );
+
+        let mut req_builder = self
+            .http_client
+            .post(&url)
+            .header("Accept", "text/event-stream");
+
+        for (name, value) in claude_api::build_headers(key) {
+            req_builder = req_builder.header(name, value);
+        }
+
+        let response = req_builder
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| anyhow!("HTTP error: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow!("API error {}: {}", status, body));
+        }
+
+        let mut accumulator = claude_api::StreamAccumulator::new();
+        let mut stream_state = claude_api::StreamState::default();
+
+        // Parse SSE stream
+        use eventsource_stream::Eventsource;
+        let byte_stream = response.bytes_stream();
+        let mut event_stream = byte_stream.eventsource();
+
+        while let Some(event_result) = event_stream.next().await {
+            let event = match event_result {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("[llm] SSE parse error: {}", e);
+                    continue;
+                }
+            };
+
+            let data = event.data.trim();
+            if data.is_empty() {
+                continue;
+            }
+
+            // Parse Anthropic event
+            let claude_event: claude_api::ClaudeStreamEvent =
+                match serde_json::from_str(data) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        eprintln!("[llm] Claude JSON parse error: {} in: {}", e, data);
+                        continue;
+                    }
+                };
+
+            // Update accumulator
+            accumulator.process_event(&claude_event);
+
+            // Translate to internal stream events and forward
+            let internal_events =
+                claude_api::translate_stream_event(&claude_event, &mut stream_state);
+            for evt in internal_events {
+                let _ = event_tx.send(evt).await;
+            }
+        }
+
+        Ok(accumulator.into_response())
     }
 }
 

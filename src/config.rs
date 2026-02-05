@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::claude_auth;
 use crate::privacy::PrivacyConfig;
 use crate::provider_health::HealthConfig;
 
@@ -77,6 +78,18 @@ impl PermissionMode {
             Self::BypassPermissions => "bypassPermissions",
         }
     }
+}
+
+/// API format for a backend.
+/// OpenAI uses `/v1/chat/completions` with `Authorization: Bearer`.
+/// Claude uses `/v1/messages` with `x-api-key` and a different request/response schema.
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ApiFormat {
+    #[default]
+    OpenAI,
+    #[serde(alias = "anthropic")]
+    Claude,
 }
 
 /// Configuration for the permissions system
@@ -252,6 +265,9 @@ pub struct BackendConfig {
     /// Whether this backend supports Zero Data Retention
     #[serde(default)]
     pub zdr: bool,
+    /// API format: "openai" (default) or "claude" (alias: "anthropic")
+    #[serde(default)]
+    pub api_format: ApiFormat,
 }
 
 /// Fallback chain configuration for automatic failover
@@ -329,9 +345,18 @@ impl FallbackChainsConfig {
 }
 
 impl BackendConfig {
-    /// Resolve the API key from environment or config, wrapped in SecretString for security.
-    /// Environment variables take priority over config file values.
-    /// Returns "ollama" as a dummy key for backends that don't require authentication.
+    /// Resolve the API key for this backend, wrapped in SecretString for security.
+    ///
+    /// Lookup order:
+    /// 1. Environment variable (`api_key_env`, e.g. `ANTHROPIC_API_KEY`)
+    /// 2. Config file value (`api_key`)
+    /// 3. For `ApiFormat::Claude` only: opencode's OAuth token (`~/.local/share/opencode/auth.json`)
+    /// 4. Dummy `"ollama"` key for backends that don't require authentication
+    ///
+    /// OAuth tokens (`sk-ant-oat01-...`) can be supplied at any step — the
+    /// `claude_api` layer detects them by prefix and switches to Bearer auth
+    /// automatically. The opencode fallback (step 3) is a convenience; it is
+    /// never consulted when a key is already provided via env or config.
     ///
     /// Security: The returned SecretString will zeroize memory on drop and won't
     /// accidentally leak via Debug/Display.
@@ -346,6 +371,18 @@ impl BackendConfig {
         // Fall back to config file key (less secure, warn in docs)
         if let Some(key) = &self.api_key {
             return Ok(SecretString::from(key.clone()));
+        }
+
+        // For Claude format backends, try opencode's OAuth token
+        if self.api_format == ApiFormat::Claude {
+            if let Some(token) = claude_auth::load_opencode_token() {
+                if token.is_expired() {
+                    return Err(anyhow::anyhow!(
+                        "Claude OAuth token has expired. Re-authenticate with: opencode auth login"
+                    ));
+                }
+                return Ok(SecretString::from(token.access));
+            }
         }
 
         // For backends like Ollama that don't require auth, return a dummy key
@@ -404,6 +441,7 @@ impl Config {
                 api_key_env: Some("VENICE_API_KEY".to_string()),
                 api_key: std::env::var("venice_api_key").ok(), // fallback to lowercase
                 zdr: true,                                     // Venice has ZDR policy
+                ..Default::default()
             },
         );
 
@@ -415,10 +453,11 @@ impl Config {
                 api_key_env: Some("OPENAI_API_KEY".to_string()),
                 api_key: None,
                 zdr: false,
+                ..Default::default()
             },
         );
 
-        // Anthropic/Claude: has ZDR option
+        // Anthropic/Claude: has ZDR option, uses native Anthropic API format
         backends.insert(
             "claude".to_string(),
             BackendConfig {
@@ -426,6 +465,7 @@ impl Config {
                 api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
                 api_key: None,
                 zdr: true,
+                api_format: ApiFormat::Claude,
             },
         );
 
@@ -437,6 +477,7 @@ impl Config {
                 api_key_env: None,
                 api_key: None,
                 zdr: true,
+                ..Default::default()
             },
         );
 
@@ -609,6 +650,13 @@ impl Config {
         // Determine ZDR status based on backend
         let zdr = matches!(backend_name, "venice" | "claude" | "ollama");
 
+        // Determine API format based on backend
+        let api_format = if backend_name == "claude" {
+            ApiFormat::Claude
+        } else {
+            ApiFormat::OpenAI
+        };
+
         // Override that backend with CLI-provided values
         config.backends.insert(
             backend_name.to_string(),
@@ -617,6 +665,7 @@ impl Config {
                 api_key: Some(api_key.to_string()),
                 api_key_env: None,
                 zdr,
+                api_format,
             },
         );
 
@@ -730,6 +779,7 @@ struct LocalPermissionsConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::ExposeSecret;
 
     #[test]
     fn test_parse_target() {
@@ -811,5 +861,106 @@ mod tests {
         let errors = config.validate().unwrap_err();
         assert_eq!(errors.len(), 1);
         assert!(errors[0].message.contains("empty"));
+    }
+
+    // --- resolve_api_key fallback order tests ---
+
+    #[test]
+    fn test_resolve_api_key_env_wins_over_config() {
+        let env_var = "BRAINPRO_TEST_KEY_ENV_WINS";
+        std::env::set_var(env_var, "from-env");
+
+        let cfg = BackendConfig {
+            api_key_env: Some(env_var.to_string()),
+            api_key: Some("from-config".to_string()),
+            ..Default::default()
+        };
+
+        let key = cfg.resolve_api_key().unwrap();
+        assert_eq!(key.expose_secret(), "from-env");
+
+        std::env::remove_var(env_var);
+    }
+
+    #[test]
+    fn test_resolve_api_key_config_when_env_unset() {
+        let env_var = "BRAINPRO_TEST_KEY_CFG_FALLBACK";
+        std::env::remove_var(env_var);
+
+        let cfg = BackendConfig {
+            api_key_env: Some(env_var.to_string()),
+            api_key: Some("from-config".to_string()),
+            ..Default::default()
+        };
+
+        let key = cfg.resolve_api_key().unwrap();
+        assert_eq!(key.expose_secret(), "from-config");
+    }
+
+    #[test]
+    fn test_resolve_api_key_dummy_when_nothing_set() {
+        let env_var = "BRAINPRO_TEST_KEY_DUMMY";
+        std::env::remove_var(env_var);
+
+        let cfg = BackendConfig {
+            api_key_env: Some(env_var.to_string()),
+            api_key: None,
+            api_format: ApiFormat::OpenAI, // no opencode fallback
+            ..Default::default()
+        };
+
+        let key = cfg.resolve_api_key().unwrap();
+        assert_eq!(key.expose_secret(), "ollama");
+    }
+
+    #[test]
+    fn test_resolve_api_key_opencode_skipped_for_openai_format() {
+        let env_var = "BRAINPRO_TEST_KEY_OPENAI_NO_OPENCODE";
+        std::env::remove_var(env_var);
+
+        let cfg = BackendConfig {
+            api_key_env: Some(env_var.to_string()),
+            api_key: None,
+            api_format: ApiFormat::OpenAI,
+            ..Default::default()
+        };
+
+        // Should fall through to dummy, never attempt opencode
+        let key = cfg.resolve_api_key().unwrap();
+        assert_eq!(key.expose_secret(), "ollama");
+    }
+
+    #[test]
+    fn test_resolve_api_key_env_beats_opencode_for_claude_format() {
+        let env_var = "BRAINPRO_TEST_KEY_ENV_BEATS_OPENCODE";
+        std::env::set_var(env_var, "sk-ant-oat01-from-env");
+
+        let cfg = BackendConfig {
+            api_key_env: Some(env_var.to_string()),
+            api_key: None,
+            api_format: ApiFormat::Claude,
+            ..Default::default()
+        };
+
+        let key = cfg.resolve_api_key().unwrap();
+        assert_eq!(key.expose_secret(), "sk-ant-oat01-from-env");
+
+        std::env::remove_var(env_var);
+    }
+
+    #[test]
+    fn test_resolve_api_key_config_beats_opencode_for_claude_format() {
+        let env_var = "BRAINPRO_TEST_KEY_CFG_BEATS_OPENCODE";
+        std::env::remove_var(env_var);
+
+        let cfg = BackendConfig {
+            api_key_env: Some(env_var.to_string()),
+            api_key: Some("sk-ant-oat01-from-config".to_string()),
+            api_format: ApiFormat::Claude,
+            ..Default::default()
+        };
+
+        let key = cfg.resolve_api_key().unwrap();
+        assert_eq!(key.expose_secret(), "sk-ant-oat01-from-config");
     }
 }
