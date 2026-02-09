@@ -14,7 +14,7 @@ fn test_config_default() {
 
 #[test]
 fn test_user_creation() {
-    let user = User::new(1, "test".to_string(), "test@example.com".to_string());
+    let user = User::new(1, "test".to_string(), "test@example.com".to_string(), 1609459200);
     assert_eq!(user.id, 1);
     assert_eq!(user.name, "test");
     assert_eq!(user.email, "test@example.com");

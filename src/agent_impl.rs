@@ -241,6 +241,12 @@ pub fn run_turn_sync(
     let mut doom_detector = DoomLoopDetector::new();
 
     for iteration in 1..=max_iterations {
+        if iteration == max_iterations {
+            messages.push(json!({
+                "role": "system",
+                "content": "Max tool iterations reached. Summarize progress, list next steps, and stop calling tools."
+            }));
+        }
         trace(ctx, "ITER", &format!("Starting iteration {}", iteration));
 
         // Auto-compaction: check if context is approaching limit

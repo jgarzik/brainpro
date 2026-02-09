@@ -32,7 +32,7 @@ fn jittered_backoff(base_ms: u64) -> u64 {
     (jittered as u64).min(MAX_BACKOFF_MS)
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<Value>,

@@ -43,11 +43,11 @@ class TestPlanMode:
         # Should have used exploration tools
         assert_output_matches("(Glob|Read|Search|Grep)", result.output)
 
-    def test_plan_cancel(self, runner: BrainproRunner, scratch_dir, fixtures_dir: Path):
+    def test_plan_cancel(self, runner: BrainproRunner, fixtures_dir: Path):
         """Plan mode can be cancelled without making changes."""
-        # Copy lib.rs to scratch
+        # Copy lib.rs to fixtures/scratch (matching the prompt path)
         src_file = fixtures_dir / "hello_repo" / "src" / "lib.rs"
-        dst_file = scratch_dir.path / "lib.rs"
+        dst_file = fixtures_dir / "scratch" / "lib.rs"
         shutil.copy(src_file, dst_file)
 
         # Get original hash
@@ -70,11 +70,11 @@ class TestPlanMode:
         # Should still have greet function
         assert_file_contains(dst_file, "fn greet")
 
-    def test_plan_execute(self, runner: BrainproRunner, scratch_dir, fixtures_dir: Path):
+    def test_plan_execute(self, runner: BrainproRunner, fixtures_dir: Path):
         """Plan mode can execute a plan and modify files."""
-        # Copy lib.rs to scratch
+        # Copy lib.rs to fixtures/scratch (matching the prompt path)
         src_file = fixtures_dir / "hello_repo" / "src" / "lib.rs"
-        dst_file = scratch_dir.path / "lib.rs"
+        dst_file = fixtures_dir / "scratch" / "lib.rs"
         shutil.copy(src_file, dst_file)
 
         result = runner.repl(

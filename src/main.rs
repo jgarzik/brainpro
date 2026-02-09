@@ -26,6 +26,7 @@ mod skillpacks;
 mod subagent;
 mod tool_display;
 mod tool_filter;
+mod tool_output;
 mod tools;
 mod transcript;
 mod vendors;

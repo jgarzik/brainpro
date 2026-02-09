@@ -29,7 +29,7 @@ pub fn apply_default_target(cfg: &mut Config) {
     }
 
     if std::env::var("VENICE_API_KEY").is_ok() || std::env::var("venice_api_key").is_ok() {
-        cfg.default_target = Some("qwen3-235b-a22b-instruct-2507@venice".to_string());
+        cfg.default_target = Some("claude-sonnet-45@venice".to_string());
     } else if std::env::var("OPENAI_API_KEY").is_ok() {
         cfg.default_target = Some("gpt-4o-mini@chatgpt".to_string());
     } else if std::env::var("ANTHROPIC_API_KEY").is_ok() {

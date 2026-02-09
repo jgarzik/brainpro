@@ -49,7 +49,7 @@ base_url = "http://localhost:11434/v1"
 # The default target to use when no --target flag is provided.
 # Format: model@backend
 
-default_target = "qwen3-235b-a22b-instruct-2507@venice"
+default_target = "claude-sonnet-45@venice"
 
 # =============================================================================
 # PERMISSIONS

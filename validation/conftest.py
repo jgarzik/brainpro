@@ -1,6 +1,7 @@
 """Pytest configuration and fixtures for brainpro validation tests."""
 
 import os
+import shutil
 from pathlib import Path
 from typing import Generator, Optional
 
@@ -177,7 +178,36 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture
 def fixtures_dir(mode_config: ModeConfig) -> Path:
-    """Return the fixtures directory path."""
+    """Return the fixtures directory path.
+    
+    Also ensures fixtures/scratch exists and is clean for each test,
+    and restores hello_repo/src/lib.rs to its canonical state (in case
+    prior tests accidentally modified it).
+    """
+    scratch = mode_config.fixtures_dir / "scratch"
+    if scratch.exists():
+        shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True, exist_ok=True)
+    
+    # Restore hello_repo/src/lib.rs to canonical state
+    lib_rs = mode_config.fixtures_dir / "hello_repo" / "src" / "lib.rs"
+    canonical_content = '''pub fn greet(name: &str) -> String {
+    // TODO: add proper greeting
+    format!("Hello, {}!", name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_greet() {
+        assert_eq!(greet("World"), "Hello, World!");
+    }
+}
+'''
+    lib_rs.write_text(canonical_content)
+    
     return mode_config.fixtures_dir
 
 

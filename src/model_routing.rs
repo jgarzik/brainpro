@@ -173,6 +173,15 @@ fn default_model_capabilities() -> HashMap<String, ModelCapabilities> {
 
     // Venice models
     caps.insert(
+        "claude-sonnet-45".to_string(),
+        ModelCapabilities {
+            context_window: 200000,
+            cost_tier: CostTier::Medium,
+            supports_tools: true,
+            zdr: true,
+        },
+    );
+    caps.insert(
         "qwen3-235b-a22b-instruct-2507".to_string(),
         ModelCapabilities {
             context_window: 131072,
@@ -224,7 +233,7 @@ fn default_routes() -> HashMap<RouteCategory, String> {
     // Planning tasks benefit from strong reasoning
     routes.insert(
         RouteCategory::Planning,
-        "qwen3-235b-a22b-instruct-2507@venice".to_string(),
+        "claude-sonnet-45@venice".to_string(),
     );
 
     // Coding needs strong code generation

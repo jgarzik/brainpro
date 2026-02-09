@@ -16,22 +16,22 @@ from harness.assertions import (
 class TestEditing:
     """Code editing tests."""
 
-    def test_create_function(self, runner: BrainproRunner, scratch_dir):
+    def test_create_function(self, runner: BrainproRunner, fixtures_dir: Path):
         """Agent can create a new file with a function."""
         prompt = 'Create a new Rust file at fixtures/scratch/math.rs with a function called "add" that takes two i32 arguments and returns their sum'
 
         result = runner.oneshot(prompt)
 
         assert_exit_code(0, result.exit_code)
-        assert_file_exists(scratch_dir.path / "math.rs")
-        assert_file_contains(scratch_dir.path / "math.rs", "fn add")
-        assert_file_contains(scratch_dir.path / "math.rs", "i32")
+        assert_file_exists(fixtures_dir / "scratch" / "math.rs")
+        assert_file_contains(fixtures_dir / "scratch" / "math.rs", "fn add")
+        assert_file_contains(fixtures_dir / "scratch" / "math.rs", "i32")
 
-    def test_multi_edit(self, runner: BrainproRunner, scratch_dir, fixtures_dir: Path):
+    def test_multi_edit(self, runner: BrainproRunner, fixtures_dir: Path):
         """Agent can perform multiple edits in one request."""
         # Copy lib.rs to scratch
         src_file = fixtures_dir / "hello_repo" / "src" / "lib.rs"
-        dst_file = scratch_dir.path / "lib.rs"
+        dst_file = fixtures_dir / "scratch" / "lib.rs"
         shutil.copy(src_file, dst_file)
 
         prompt = 'In fixtures/scratch/lib.rs: 1) Rename the function from "greet" to "hello" 2) Add a new function called "farewell" that returns "Goodbye, World!"'

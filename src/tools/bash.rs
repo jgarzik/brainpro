@@ -15,6 +15,17 @@ use wait_timeout::ChildExt;
 const DEFAULT_TIMEOUT_MS: u64 = 120_000; // 2 minutes
 const MAX_TIMEOUT_MS: u64 = 600_000; // 10 minutes
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 200_000; // 200KB
+const BLOCKED_ENV_PREFIXES: &[&str] = &[
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "DYLD_",
+    "NODE_OPTIONS",
+    "PYTHONPATH",
+    "BASH_ENV",
+    // Note: ENV is handled by exact match in sanitize_env(), not as prefix
+    "IFS",
+    // Note: PATH is NOT blocked - it's needed to find executables like cargo, git, etc.
+];
 
 #[derive(Debug, Deserialize)]
 struct BashArgs {
@@ -124,6 +135,8 @@ pub fn execute(args: Value, root: &Path, config: &BashConfig) -> Result<Value> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
+    sanitize_env(&mut cmd);
+
     // Spawn the process
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -226,6 +239,31 @@ fn validate_cwd(cwd: &Path, root: &Path) -> Result<std::path::PathBuf, Value> {
     Ok(canonical)
 }
 
+fn sanitize_env(cmd: &mut Command) {
+    cmd.env_remove("LD_PRELOAD");
+    cmd.env_remove("LD_LIBRARY_PATH");
+    cmd.env_remove("NODE_OPTIONS");
+    cmd.env_remove("PYTHONPATH");
+    cmd.env_remove("BASH_ENV");
+    cmd.env_remove("ENV");
+    cmd.env_remove("IFS");
+
+    if let Ok(path) = std::env::var("PATH") {
+        cmd.env("PATH", path);
+    } else {
+        cmd.env_remove("PATH");
+    }
+
+    for (key, _) in std::env::vars() {
+        if BLOCKED_ENV_PREFIXES
+            .iter()
+            .any(|prefix| key.starts_with(prefix))
+        {
+            cmd.env_remove(key);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,5 +364,35 @@ mod tests {
 
         // Should be denied as it escapes root
         assert!(result.get("error").is_some());
+    }
+
+    #[test]
+    fn test_env_filtering_removes_preload() {
+        let mut cmd = Command::new("true");
+        cmd.env("LD_PRELOAD", "bad.so");
+        sanitize_env(&mut cmd);
+        let mut removed = false;
+        for (key, value) in cmd.get_envs() {
+            if key.to_str() == Some("LD_PRELOAD") {
+                removed = value.is_none();
+                break;
+            }
+        }
+        assert!(removed);
+    }
+
+    #[test]
+    fn test_env_filtering_removes_node_options_prefix() {
+        let mut cmd = Command::new("true");
+        cmd.env("NODE_OPTIONS", "--require evil");
+        sanitize_env(&mut cmd);
+        let mut removed = false;
+        for (key, value) in cmd.get_envs() {
+            if key.to_str() == Some("NODE_OPTIONS") {
+                removed = value.is_none();
+                break;
+            }
+        }
+        assert!(removed);
     }
 }

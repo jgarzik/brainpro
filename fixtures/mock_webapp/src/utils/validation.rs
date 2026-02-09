@@ -18,6 +18,11 @@ pub fn validate_password(password: &str) -> bool {
     password.len() >= 8
 }
 
+/// Check if a character is valid for a username.
+pub fn is_valid_username_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_' || c == '-'
+}
+
 /// Sanitize user input by removing dangerous characters.
 pub fn sanitize_input(input: &str) -> String {
     input

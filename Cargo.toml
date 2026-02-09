@@ -55,6 +55,7 @@ wait-timeout = "0.2"
 walkdir = "2"
 shell-words = "1.1"
 async-trait = "0.1"
+tiktoken-rs = "0.6"
 
 # Channel integrations (optional)
 teloxide = { version = "0.14", features = ["macros"], optional = true }

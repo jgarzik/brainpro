@@ -33,9 +33,13 @@ pub mod skillpacks;
 pub mod subagent;
 pub mod tool_display;
 pub mod tool_filter;
+pub mod tool_output;
 pub mod tools;
 pub mod transcript;
 pub mod vendors;
+
+#[cfg(test)]
+pub mod test_utils;
 
 // Re-export Args for the binaries
 pub use cli::Args;

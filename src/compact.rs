@@ -7,10 +7,21 @@ use crate::config::ContextConfig;
 use crate::llm::{ChatRequest, Client, LlmClient};
 use anyhow::Result;
 use serde_json::{json, Value};
+use tiktoken_rs::cl100k_base;
 
 /// Estimate character count for a message
 fn estimate_chars(msg: &Value) -> usize {
     serde_json::to_string(msg).map(|s| s.len()).unwrap_or(0)
+}
+
+fn estimate_tokens(msg: &Value) -> usize {
+    let text = serde_json::to_string(msg).unwrap_or_default();
+    let bpe = cl100k_base().ok();
+    if let Some(encoder) = bpe {
+        encoder.encode_with_special_tokens(&text).len()
+    } else {
+        text.len() / 4
+    }
 }
 
 /// Calculate total context size in characters
@@ -18,14 +29,24 @@ pub fn context_size(messages: &[Value]) -> usize {
     messages.iter().map(estimate_chars).sum()
 }
 
+pub fn context_tokens(messages: &[Value]) -> usize {
+    messages.iter().map(estimate_tokens).sum()
+}
+
 /// Check if compaction is needed based on config thresholds
 pub fn needs_compaction(messages: &[Value], config: &ContextConfig) -> bool {
     if !config.auto_compact_enabled {
         return false;
     }
+    let current_tokens = context_tokens(messages);
+    let token_threshold =
+        (config.context_window_tokens as f64 * config.token_budget_ratio) as usize;
+    if current_tokens > token_threshold {
+        return true;
+    }
     let current_size = context_size(messages);
-    let threshold = (config.max_chars as f64 * config.auto_compact_threshold) as usize;
-    current_size > threshold
+    let char_threshold = (config.max_chars as f64 * config.auto_compact_threshold) as usize;
+    current_size > char_threshold
 }
 
 /// Result of compaction
@@ -33,8 +54,8 @@ pub fn needs_compaction(messages: &[Value], config: &ContextConfig) -> bool {
 pub struct CompactionResult {
     pub original_count: usize,
     pub compacted_count: usize,
-    pub original_chars: usize,
-    pub compacted_chars: usize,
+    pub original_tokens: usize,
+    pub compacted_tokens: usize,
     pub summary: String,
 }
 
@@ -51,7 +72,7 @@ pub fn compact_messages(
     model: &str,
 ) -> Result<(Vec<Value>, CompactionResult)> {
     let original_count = messages.len();
-    let original_chars = context_size(messages);
+    let original_tokens = context_tokens(messages);
 
     // If we have fewer messages than keep_last_turns, nothing to compact
     if messages.len() <= config.keep_last_turns * 2 {
@@ -60,19 +81,16 @@ pub fn compact_messages(
             CompactionResult {
                 original_count,
                 compacted_count: messages.len(),
-                original_chars,
-                compacted_chars: original_chars,
+                original_tokens,
+                compacted_tokens: original_tokens,
                 summary: String::new(),
             },
         ));
     }
 
-    // Split messages: older ones to summarize, recent ones to keep
+    let summary = generate_summary_with_fallback(messages, config, llm_client, model)?;
     let split_point = messages.len().saturating_sub(config.keep_last_turns * 2);
-    let (to_summarize, to_keep) = messages.split_at(split_point);
-
-    // Generate summary of older messages
-    let summary = generate_summary(to_summarize, llm_client, model)?;
+    let to_keep = &messages[split_point..];
 
     // Build compacted message list
     let mut compacted = Vec::new();
@@ -82,7 +100,7 @@ pub fn compact_messages(
         "role": "system",
         "content": format!(
             "CONVERSATION SUMMARY (compacted from {} earlier messages):\n\n{}",
-            to_summarize.len(),
+            split_point,
             summary
         )
     }));
@@ -90,7 +108,7 @@ pub fn compact_messages(
     // Add the recent messages
     compacted.extend(to_keep.iter().cloned());
 
-    let compacted_chars = context_size(&compacted);
+    let compacted_tokens = context_tokens(&compacted);
     let compacted_count = compacted.len();
 
     Ok((
@@ -98,8 +116,8 @@ pub fn compact_messages(
         CompactionResult {
             original_count,
             compacted_count,
-            original_chars,
-            compacted_chars,
+            original_tokens,
+            compacted_tokens,
             summary,
         },
     ))
@@ -172,20 +190,63 @@ Be brief but complete. Focus on facts and outcomes."
     Ok("Unable to generate summary.".to_string())
 }
 
+fn generate_summary_with_fallback(
+    messages: &[Value],
+    config: &ContextConfig,
+    client: &Client,
+    model: &str,
+) -> Result<String> {
+    let split_point = messages.len().saturating_sub(config.keep_last_turns * 2);
+    let (to_summarize, _) = messages.split_at(split_point);
+    let budget = (config.context_window_tokens as f64 * config.token_budget_ratio) as usize;
+
+    let summary = generate_summary(to_summarize, client, model)?;
+    let summary_tokens = estimate_tokens(&json!({"role": "system", "content": summary}));
+    if summary_tokens < budget {
+        return Ok(summary);
+    }
+
+    let filtered = filter_oversized_messages(to_summarize, budget);
+    if !filtered.is_empty() {
+        let summary = generate_summary(&filtered, client, model)?;
+        let summary_tokens = estimate_tokens(&json!({"role": "system", "content": summary}));
+        if summary_tokens < budget {
+            return Ok(summary);
+        }
+    }
+
+    let note = format!(
+        "Summary omitted due to context size constraints. {} messages retained.",
+        messages.len() - split_point
+    );
+    Ok(note)
+}
+
+fn filter_oversized_messages(messages: &[Value], budget: usize) -> Vec<Value> {
+    let mut filtered = Vec::new();
+    for msg in messages {
+        let tokens = estimate_tokens(msg);
+        if tokens < budget / 2 {
+            filtered.push(msg.clone());
+        }
+    }
+    filtered
+}
+
 /// Format compaction result for display
 pub fn format_result(result: &CompactionResult) -> String {
-    let reduction = if result.original_chars > 0 {
-        100.0 - (result.compacted_chars as f64 / result.original_chars as f64 * 100.0)
+    let reduction = if result.original_tokens > 0 {
+        100.0 - (result.compacted_tokens as f64 / result.original_tokens as f64 * 100.0)
     } else {
         0.0
     };
 
     format!(
-        "Compacted: {} → {} messages, {} → {} chars ({:.0}% reduction)",
+        "Compacted: {} → {} messages, {} → {} tokens ({:.0}% reduction)",
         result.original_count,
         result.compacted_count,
-        result.original_chars,
-        result.compacted_chars,
+        result.original_tokens,
+        result.compacted_tokens,
         reduction
     )
 }
@@ -211,6 +272,8 @@ mod tests {
             auto_compact_threshold: 0.8,
             auto_compact_enabled: true,
             keep_last_turns: 2,
+            token_budget_ratio: 0.9,
+            context_window_tokens: 1000,
         };
 
         // Small context - no compaction needed
@@ -226,5 +289,25 @@ mod tests {
             .map(|i| json!({"role": "user", "content": format!("message {}", i)}))
             .collect();
         assert!(!needs_compaction(&large_messages, &disabled_config));
+    }
+
+    #[test]
+    fn test_context_tokens_nonzero() {
+        let messages = vec![
+            json!({"role": "user", "content": "hello"}),
+            json!({"role": "assistant", "content": "world"}),
+        ];
+        let tokens = context_tokens(&messages);
+        assert!(tokens > 0);
+    }
+
+    #[test]
+    fn test_filter_oversized_messages() {
+        let messages = vec![
+            json!({"role": "user", "content": "short"}),
+            json!({"role": "assistant", "content": "a".repeat(10_000)}),
+        ];
+        let filtered = filter_oversized_messages(&messages, 1000);
+        assert_eq!(filtered.len(), 1);
     }
 }
