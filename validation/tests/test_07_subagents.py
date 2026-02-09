@@ -27,11 +27,11 @@ class TestSubagents:
         assert_output_contains("lib.rs", result.output)
         assert_output_contains("main.rs", result.output)
 
-    def test_patch_agent(self, runner: BrainproRunner, scratch_dir, fixtures_dir: Path):
+    def test_patch_agent(self, runner: BrainproRunner, fixtures_dir: Path):
         """Patch subagent can edit files."""
-        # Copy lib.rs to scratch
+        # Copy lib.rs to fixtures/scratch (matching the prompt path)
         src_file = fixtures_dir / "hello_repo" / "src" / "lib.rs"
-        dst_file = scratch_dir.path / "lib.rs"
+        dst_file = fixtures_dir / "scratch" / "lib.rs"
         shutil.copy(src_file, dst_file)
 
         prompt = "Use the patch agent to add a doc comment to the greet function in fixtures/scratch/lib.rs"

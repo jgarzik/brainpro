@@ -21,8 +21,8 @@ pub fn run_turn(
 ) -> Result<agent::TurnResult> {
     let hooks = PersonaHooks::new(config);
 
-    // MrCode uses base schemas without Task tool
-    let loop_config = AgentLoopConfig::default();
+    // MrCode uses full tool set (matching Claude Code / OpenCode)
+    let loop_config = AgentLoopConfig::default().with_task_tool();
 
     // Run the core loop
     let result = run_loop(&hooks, ctx, &loop_config, user_input, messages)?;

@@ -9,6 +9,7 @@
 use crate::cli::Context;
 use crate::config::BashConfig;
 use crate::policy::Decision;
+use crate::tool_output;
 use crate::tools;
 use anyhow::Result;
 use serde_json::{json, Value};
@@ -216,6 +217,31 @@ pub fn execute_with_policy(
 
     let duration_ms = tool_start.elapsed().as_millis() as u64;
 
+    let result = match result {
+        DispatchResult::Ok(value) => {
+            let truncated = tool_output::maybe_truncate(name, &value, &ctx.root);
+            DispatchResult::Ok(truncated)
+        }
+        DispatchResult::Error(value) => {
+            let truncated = tool_output::maybe_truncate(name, &value, &ctx.root);
+            DispatchResult::Error(truncated)
+        }
+        DispatchResult::AskUser { result, questions } => {
+            let truncated = tool_output::maybe_truncate(name, &result, &ctx.root);
+            DispatchResult::AskUser {
+                result: truncated,
+                questions,
+            }
+        }
+        DispatchResult::Task { result, stats } => {
+            let truncated = tool_output::maybe_truncate(name, &result, &ctx.root);
+            DispatchResult::Task {
+                result: truncated,
+                stats,
+            }
+        }
+    };
+
     // Extract the Value for hooks
     let result_value = match &result {
         DispatchResult::Ok(v) | DispatchResult::Error(v) => v.clone(),
@@ -258,11 +284,28 @@ pub fn execute_simple(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tool_output;
 
     #[test]
     fn test_dispatch_result_variants() {
         // Just verify the enum variants compile
         let _ok = DispatchResult::Ok(json!({"ok": true}));
         let _err = DispatchResult::Error(json!({"error": {"code": "test"}}));
+    }
+
+    #[test]
+    fn test_truncation_applied_to_dispatch_result() {
+        let root = tempfile::TempDir::new().unwrap();
+        let result = json!({
+            "content": "a".repeat(tool_output::MAX_TOOL_OUTPUT_BYTES + 10)
+        });
+        let truncated = tool_output::maybe_truncate("Read", &result, root.path());
+        let dispatched = DispatchResult::Ok(truncated);
+        match dispatched {
+            DispatchResult::Ok(value) => {
+                assert!(value.get("output_truncated").is_some());
+            }
+            _ => panic!("unexpected result"),
+        }
     }
 }

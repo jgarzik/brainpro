@@ -161,10 +161,7 @@ pub fn format_tool_result(name: &str, result: &Value) -> String {
     match name {
         "Read" => {
             let lines = result.get("lines").and_then(|v| v.as_u64()).unwrap_or(0);
-            let truncated = result
-                .get("truncated")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            let truncated = is_result_truncated(result);
             if truncated {
                 format!("  ⎿  Read {} lines (truncated)", lines)
             } else {
@@ -215,10 +212,7 @@ pub fn format_tool_result(name: &str, result: &Value) -> String {
                 .get("duration_ms")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
-            let truncated = result
-                .get("truncated")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            let truncated = is_result_truncated(result);
 
             let status = match exit_code {
                 Some(0) => "✓".to_string(),
@@ -248,10 +242,7 @@ pub fn format_tool_result(name: &str, result: &Value) -> String {
                 .and_then(|v| v.as_array())
                 .map(|a| a.len())
                 .unwrap_or(0);
-            let truncated = result
-                .get("truncated")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            let truncated = is_result_truncated(result);
             if truncated {
                 format!("  ⎿  Found {} files (truncated)", paths)
             } else if paths == 1 {
@@ -265,10 +256,7 @@ pub fn format_tool_result(name: &str, result: &Value) -> String {
                 .get("matches_found")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
-            let truncated = result
-                .get("truncated")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            let truncated = is_result_truncated(result);
             if truncated {
                 format!("  ⎿  Found {} matches (truncated)", count)
             } else if count == 1 {
@@ -280,10 +268,7 @@ pub fn format_tool_result(name: &str, result: &Value) -> String {
         "Search" => {
             // Search has different output modes
             if let Some(count) = result.get("count").and_then(|v| v.as_u64()) {
-                let truncated = result
-                    .get("truncated")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
+                let truncated = is_result_truncated(result);
                 // Could be files_with_matches (paths) or content mode (matches)
                 if result.get("paths").is_some() {
                     if truncated {
@@ -348,10 +333,7 @@ pub fn format_tool_result(name: &str, result: &Value) -> String {
             if name.starts_with("mcp.") {
                 let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(true);
                 let duration = result.get("duration_ms").and_then(|v| v.as_u64());
-                let truncated = result
-                    .get("truncated")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
+                let truncated = is_result_truncated(result);
 
                 let status = if ok { "✓" } else { "✗" };
                 let mut msg = format!("  ⎿  {}", status);
@@ -379,6 +361,18 @@ pub fn format_tool_result(name: &str, result: &Value) -> String {
             }
         }
     }
+}
+
+fn is_result_truncated(result: &Value) -> bool {
+    result
+        .get("output_truncated")
+        .and_then(|v| v.as_bool())
+        .unwrap_or_else(|| {
+            result
+                .get("truncated")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
 }
 
 /// Truncate a string to max length with ellipsis
@@ -452,5 +446,12 @@ mod tests {
         let result = json!({"paths": ["a.rs", "b.rs", "c.rs"], "truncated": false});
         let display = format_tool_result("Glob", &result);
         assert_eq!(display, "  ⎿  Found 3 files");
+    }
+
+    #[test]
+    fn test_format_truncated_output_flag() {
+        let result = json!({"lines": 3, "output_truncated": true});
+        let display = format_tool_result("Read", &result);
+        assert_eq!(display, "  ⎿  Read 3 lines (truncated)");
     }
 }

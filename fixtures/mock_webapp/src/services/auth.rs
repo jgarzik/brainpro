@@ -41,4 +41,14 @@ impl AuthService {
     fn get_api_key(&self) -> &str {
         &self.api_key
     }
+
+    /// Get the maximum number of allowed concurrent sessions.
+    pub fn get_max_sessions(&self) -> u32 {
+        self.config.max_sessions
+    }
+
+    /// Check if the current session count is within the allowed limit.
+    pub fn can_create_session(&self, current_session_count: u32) -> bool {
+        current_session_count < self.config.max_sessions
+    }
 }

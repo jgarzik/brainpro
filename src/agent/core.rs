@@ -13,6 +13,7 @@
 use crate::agent::tool_executor::{self, DispatchResult};
 use crate::cli::Context;
 use crate::compact;
+use crate::config::BashConfig;
 use crate::llm::{self, LlmClient};
 use crate::plan::{self, PlanPhase};
 use crate::tool_display;
@@ -43,6 +44,89 @@ fn hash_tool_call(name: &str, args: &Value) -> u64 {
 /// Check if a tool is pure (read-only, parallelizable)
 fn is_pure_tool(name: &str) -> bool {
     PURE_TOOLS.contains(&name)
+}
+
+fn execute_tool_call(
+    ctx: &Context,
+    bash_config: &BashConfig,
+    tc: llm::ToolCall,
+    args: Value,
+) -> (llm::ToolCall, DispatchResult, bool) {
+    let name = &tc.function.name;
+
+    trace(
+        ctx,
+        "CALL",
+        &format!(
+            "{}({})",
+            name,
+            serde_json::to_string_pretty(&args).unwrap_or_default()
+        ),
+    );
+
+    verbose(
+        ctx,
+        &format!("Tool call: {}({})", name, tc.function.arguments),
+    );
+    eprintln!("{}", tool_display::format_tool_call(name, &args));
+    let _ = ctx.transcript.borrow_mut().tool_call(name, &args);
+
+    let (dispatch_result, ok, _duration_ms) =
+        tool_executor::execute_with_policy(ctx, name, args.clone(), bash_config);
+
+    trace(
+        ctx,
+        "RESULT",
+        &format!(
+            "{}: {}",
+            name,
+            serde_json::to_string_pretty(&dispatch_result_value(&dispatch_result))
+                .unwrap_or_default()
+        ),
+    );
+
+    verbose(ctx, &format!("Tool result: {} ok={}", name, ok));
+    eprintln!(
+        "{}",
+        tool_display::format_tool_result(name, &dispatch_result_value(&dispatch_result))
+    );
+
+    (tc, dispatch_result, ok)
+}
+
+fn append_tool_result(
+    turn_result: &mut TurnResult,
+    tool_results: &mut Vec<(String, String, Value)>,
+    result: (llm::ToolCall, DispatchResult, bool),
+) {
+    let (tc, dispatch_result, _ok) = result;
+    let name = &tc.function.name;
+    let value = dispatch_result_value(&dispatch_result);
+
+    turn_result.stats.tool_uses += 1;
+
+    match dispatch_result {
+        DispatchResult::AskUser { questions, .. } => {
+            turn_result.pending_question = Some(PendingQuestion {
+                tool_call_id: tc.id.clone(),
+                questions,
+            });
+        }
+        DispatchResult::Task { stats, .. } => {
+            turn_result.stats.merge(&stats);
+        }
+        _ => {}
+    }
+
+    tool_results.push((tc.id.clone(), name.clone(), value));
+}
+
+fn dispatch_result_value(result: &DispatchResult) -> Value {
+    match result {
+        DispatchResult::Ok(v) | DispatchResult::Error(v) => v.clone(),
+        DispatchResult::AskUser { result, .. } => result.clone(),
+        DispatchResult::Task { result, .. } => result.clone(),
+    }
 }
 
 /// Doom loop detector using a ring buffer of recent tool calls
@@ -359,6 +443,12 @@ pub fn run_loop<H: AgentHooks>(
     let mut doom_detector = DoomLoopDetector::new();
 
     for iteration in 1..=max_iterations {
+        if iteration == max_iterations {
+            messages.push(json!({
+                "role": "system",
+                "content": "Max tool iterations reached. Summarize progress, list next steps, and stop calling tools."
+            }));
+        }
         trace(ctx, "ITER", &format!("Starting iteration {}", iteration));
 
         // Log iteration start for debugging (tool count will be 0 until we get response)
@@ -530,14 +620,11 @@ pub fn run_loop<H: AgentHooks>(
             .drain(..)
             .partition(|(tc, _)| is_pure_tool(&tc.function.name));
 
-        // Execute pure tools in parallel (conceptually - sync for now)
-        // TODO: Convert to actual async parallel execution when agent loop goes async
         let mut tool_results: Vec<(String, String, Value)> = Vec::new();
 
-        for (tc, args_result) in pure_calls.into_iter().chain(effectful_calls.into_iter()) {
+        let mut parsed_pure: Vec<(llm::ToolCall, Value)> = Vec::new();
+        for (tc, args_result) in pure_calls.into_iter() {
             let name = &tc.function.name;
-
-            // Handle JSON parse errors - return error to LLM so it can learn
             let args = match args_result {
                 Ok(a) => a,
                 Err(parse_error) => {
@@ -554,7 +641,6 @@ pub fn run_loop<H: AgentHooks>(
                 }
             };
 
-            // Doom loop detection
             let call_hash = hash_tool_call(name, &args);
             if doom_detector.record(call_hash) {
                 eprintln!(
@@ -572,70 +658,66 @@ pub fn run_loop<H: AgentHooks>(
                     }
                 });
                 tool_results.push((tc.id.clone(), name.clone(), error_result));
-
-                // Set flag to break outer loop (results will be added below)
                 turn_result.response_text = Some(
                     "Agent stopped due to doom loop (repeated identical tool calls).".to_string(),
                 );
                 break;
             }
 
-            turn_result.stats.tool_uses += 1;
+            parsed_pure.push((tc.clone(), args));
+        }
 
-            trace(
-                ctx,
-                "CALL",
-                &format!(
-                    "{}({})",
-                    name,
-                    serde_json::to_string_pretty(&args).unwrap_or_default()
-                ),
-            );
+        if !parsed_pure.is_empty() {
+            for (tc, args) in parsed_pure.into_iter() {
+                let result = execute_tool_call(ctx, &bash_config, tc, args);
+                append_tool_result(&mut turn_result, &mut tool_results, result);
+            }
+        }
 
-            verbose(
-                ctx,
-                &format!("Tool call: {}({})", name, tc.function.arguments),
-            );
-
-            eprintln!("{}", tool_display::format_tool_call(name, &args));
-            let _ = ctx.transcript.borrow_mut().tool_call(name, &args);
-
-            // Execute tool with policy/hooks
-            let (dispatch_result, ok, _duration_ms) =
-                tool_executor::execute_with_policy(ctx, name, args.clone(), &bash_config);
-
-            // Handle dispatch result
-            let result = match dispatch_result {
-                DispatchResult::Ok(v) | DispatchResult::Error(v) => v,
-                DispatchResult::AskUser { result, questions } => {
-                    turn_result.pending_question = Some(PendingQuestion {
-                        tool_call_id: tc.id.clone(),
-                        questions,
+        for (tc, args_result) in effectful_calls.into_iter() {
+            let name = &tc.function.name;
+            let args = match args_result {
+                Ok(a) => a,
+                Err(parse_error) => {
+                    turn_result.stats.tool_uses += 1;
+                    let error_result = json!({
+                        "error": {
+                            "code": "invalid_arguments",
+                            "message": parse_error
+                        }
                     });
-                    result
-                }
-                DispatchResult::Task { result, stats } => {
-                    turn_result.stats.merge(&stats);
-                    result
+                    eprintln!("{}", tool_display::format_tool_result(name, &error_result));
+                    tool_results.push((tc.id.clone(), name.clone(), error_result));
+                    continue;
                 }
             };
 
-            trace(
-                ctx,
-                "RESULT",
-                &format!(
-                    "{}: {}",
-                    name,
-                    serde_json::to_string_pretty(&result).unwrap_or_default()
-                ),
-            );
+            let call_hash = hash_tool_call(name, &args);
+            if doom_detector.record(call_hash) {
+                eprintln!(
+                    "⚠️  Doom loop detected: {} called {} times with same arguments. Breaking.",
+                    name, DOOM_LOOP_THRESHOLD
+                );
+                let error_result = json!({
+                    "error": {
+                        "code": "doom_loop_detected",
+                        "message": format!(
+                            "Tool '{}' called {} times with identical arguments. \
+                             This appears to be a stuck loop. Please try a different approach.",
+                            name, DOOM_LOOP_THRESHOLD
+                        )
+                    }
+                });
+                tool_results.push((tc.id.clone(), name.clone(), error_result));
+                turn_result.response_text = Some(
+                    "Agent stopped due to doom loop (repeated identical tool calls).".to_string(),
+                );
+                break;
+            }
 
-            verbose(ctx, &format!("Tool result: {} ok={}", name, ok));
-            eprintln!("{}", tool_display::format_tool_result(name, &result));
+            let result = execute_tool_call(ctx, &bash_config, tc.clone(), args);
+            append_tool_result(&mut turn_result, &mut tool_results, result);
 
-            tool_results.push((tc.id.clone(), name.clone(), result));
-
-            // Break if pending question
             if turn_result.pending_question.is_some() {
                 break;
             }
@@ -716,5 +798,23 @@ mod tests {
         assert_eq!(config.max_iterations, 5);
         assert!(config.include_task_tool);
         assert!(config.streaming);
+    }
+
+    #[test]
+    fn test_wind_down_prompt_injected() {
+        let mut messages = vec![serde_json::json!({"role": "user", "content": "hello"})];
+        let max_iterations = 1;
+        for iteration in 1..=max_iterations {
+            if iteration == max_iterations {
+                messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": "Max tool iterations reached. Summarize progress, list next steps, and stop calling tools."
+                }));
+            }
+        }
+        let last_system = messages.iter().rev().find(|m| m["role"] == "system");
+        assert!(last_system.is_some());
+        let content = last_system.unwrap()["content"].as_str().unwrap();
+        assert!(content.contains("Max tool iterations"));
     }
 }

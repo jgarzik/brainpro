@@ -9,13 +9,14 @@ pub struct User {
     pub name: String,
     /// User's email address
     pub email: String,
-    // TODO: Add created_at timestamp field
+    /// Timestamp when the user was created
+    pub created_at: u64,
 }
 
 impl User {
     /// Create a new user.
-    pub fn new(id: u64, name: String, email: String) -> Self {
-        Self { id, name, email }
+    pub fn new(id: u64, name: String, email: String, created_at: u64) -> Self {
+        Self { id, name, email, created_at }
     }
 
     /// Check if the user is an admin.

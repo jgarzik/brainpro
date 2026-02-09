@@ -62,8 +62,8 @@ class ModeConfig:
 
     @property
     def mock_webapp_scratch(self) -> Path:
-        """Return path to mock_webapp scratch copy."""
-        return Path(tempfile.gettempdir()) / "brainpro-mock-webapp-scratch"
+        """Return path to mock_webapp scratch copy (under project root for relative path support)."""
+        return self.project_root / "fixtures" / "mock_webapp_scratch"
 
     @property
     def results_dir(self) -> Path:

@@ -14,8 +14,8 @@ from harness.assertions import (
     assert_success,
 )
 
-# Path to mock_webapp_scratch (now in /tmp)
-WEBAPP = "/tmp/brainpro-mock-webapp-scratch"
+# Path to mock_webapp_scratch (relative to project root for tool compatibility)
+WEBAPP = "fixtures/mock_webapp_scratch"
 
 
 class TestRefactoring:

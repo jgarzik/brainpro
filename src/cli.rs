@@ -43,11 +43,7 @@ pub struct Args {
     )]
     pub base_url: String,
 
-    #[arg(
-        long,
-        env = "OPENAI_MODEL",
-        default_value = "qwen3-235b-a22b-instruct-2507"
-    )]
+    #[arg(long, env = "OPENAI_MODEL", default_value = "claude-sonnet-45")]
     pub model: String,
 
     #[arg(long, help = "Auto-approve mutations in -p mode")]
@@ -123,7 +119,7 @@ impl Default for Args {
             prompt: None,
             api_key: None,
             base_url: "https://api.venice.ai/api/v1".to_string(),
-            model: "qwen3-235b-a22b-instruct-2507".to_string(),
+            model: "claude-sonnet-45".to_string(),
             yes: false,
             transcripts_dir: None,
             trace: false,

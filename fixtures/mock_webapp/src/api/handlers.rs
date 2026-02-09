@@ -3,25 +3,28 @@
 use crate::models::user::User;
 use crate::services::auth::AuthService;
 
-// Handler for getting user by ID
+/// Retrieves a user by their unique ID.
+/// Returns `Some(User)` if found, `None` otherwise.
 pub fn get_user(user_id: u64) -> Option<User> {
     // Simulate database lookup
     if user_id == 1 {
-        Some(User::new(1, "admin".to_string(), "admin@example.com".to_string()))
+        Some(User::new(1, "admin".to_string(), "admin@example.com".to_string(), 1609459200))
     } else {
         None
     }
 }
 
-// Handler for creating a new user
+/// Creates a new user with the provided name and email.
+/// Returns `Ok(User)` on success, `Err(message)` on validation failure.
 pub fn create_user(name: String, email: String) -> Result<User, String> {
     if name.is_empty() {
         return Err("Name cannot be empty".to_string());
     }
-    Ok(User::new(0, name, email))
+    Ok(User::new(0, name, email, 1609459200))
 }
 
-// Handler for user login
+/// Authenticates a user with email and password.
+/// Returns `Ok(token)` with an authentication token on success, `Err(message)` on failure.
 pub fn login(email: &str, password: &str, auth: &AuthService) -> Result<String, String> {
     if auth.verify_credentials(email, password) {
         Ok(auth.generate_token(email))
@@ -30,15 +33,17 @@ pub fn login(email: &str, password: &str, auth: &AuthService) -> Result<String, 
     }
 }
 
-// Handler for listing all users
+/// Returns a list of all users in the system.
+/// This is a mock implementation with static data.
 pub fn list_users() -> Vec<User> {
     vec![
-        User::new(1, "admin".to_string(), "admin@example.com".to_string()),
-        User::new(2, "user".to_string(), "user@example.com".to_string()),
+        User::new(1, "admin".to_string(), "admin@example.com".to_string(), 1609459200),
+        User::new(2, "user".to_string(), "user@example.com".to_string(), 1609459300),
     ]
 }
 
-// Handler for deleting a user
+/// Deletes a user by their ID.
+/// Returns `true` if deletion was successful (simulated), `false` otherwise.
 pub fn delete_user(user_id: u64) -> bool {
     // Simulate deletion
     user_id > 0

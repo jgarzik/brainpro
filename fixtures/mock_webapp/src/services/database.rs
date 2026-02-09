@@ -20,24 +20,15 @@ impl Database {
     pub fn query(&self, sql: &str) -> Vec<User> {
         // Simulated query execution
         if sql.contains("SELECT") {
-            vec![User::new(1, "test".to_string(), "test@example.com".to_string())]
+            vec![User::new(
+                1,
+                "test".to_string(),
+                "test@example.com".to_string(),
+                1609459200,
+            )]
         } else {
             vec![]
         }
-    }
-
-    /// Execute a query using the old API.
-    ///
-    /// # Deprecated
-    /// This function is deprecated. Use `query()` instead.
-    #[deprecated(since = "0.1.0", note = "Use query() instead")]
-    pub fn old_query(&self, sql: &str) -> Vec<User> {
-        // Old implementation - less efficient
-        let mut results = Vec::new();
-        if sql.contains("SELECT") {
-            results.push(User::new(1, "test".to_string(), "test@example.com".to_string()));
-        }
-        results
     }
 
     /// Insert a new record.
@@ -49,5 +40,13 @@ impl Database {
     /// Check database connection.
     pub fn is_connected(&self) -> bool {
         !self.connection_string.is_empty()
+    }
+
+    /// Run a legacy query.
+    ///
+    /// This function is deprecated and will be removed in a future version.
+    #[deprecated(note = "Use query() instead")]
+    pub fn old_query(&self, sql: &str) -> Vec<User> {
+        self.query(sql)
     }
 }

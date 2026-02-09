@@ -59,12 +59,12 @@ class TestAgentLoop:
         assert_output_contains("test_greet", result.output)
 
     def test_iterative_edit(
-        self, runner: BrainproRunner, scratch_dir, fixtures_dir: Path
+        self, runner: BrainproRunner, fixtures_dir: Path
     ):
         """Agent can perform iterative edits across multiple turns."""
-        # Copy lib.rs to scratch
+        # Copy lib.rs to fixtures/scratch (matching the prompt path)
         src_file = fixtures_dir / "hello_repo" / "src" / "lib.rs"
-        dst_file = scratch_dir.path / "lib.rs"
+        dst_file = fixtures_dir / "scratch" / "lib.rs"
         shutil.copy(src_file, dst_file)
 
         result = runner.repl(

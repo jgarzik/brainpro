@@ -187,6 +187,10 @@ pub struct ContextConfig {
     pub auto_compact_enabled: bool,
     #[serde(default = "default_keep_last_turns")]
     pub keep_last_turns: usize,
+    #[serde(default = "default_token_budget_ratio")]
+    pub token_budget_ratio: f64,
+    #[serde(default = "default_context_window_tokens")]
+    pub context_window_tokens: usize,
 }
 
 fn default_max_chars() -> usize {
@@ -201,6 +205,12 @@ fn default_true() -> bool {
 fn default_keep_last_turns() -> usize {
     10
 }
+fn default_token_budget_ratio() -> f64 {
+    0.95
+}
+fn default_context_window_tokens() -> usize {
+    128_000
+}
 
 impl Default for ContextConfig {
     fn default() -> Self {
@@ -209,6 +219,8 @@ impl Default for ContextConfig {
             auto_compact_threshold: default_auto_compact_threshold(),
             auto_compact_enabled: default_true(),
             keep_last_turns: default_keep_last_turns(),
+            token_budget_ratio: default_token_budget_ratio(),
+            context_window_tokens: default_context_window_tokens(),
         }
     }
 }

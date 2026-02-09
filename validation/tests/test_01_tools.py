@@ -29,22 +29,22 @@ class TestTools:
         assert_output_contains("greet", result.output)
         assert_tool_called("Read", result.output)
 
-    def test_write_basic(self, runner: BrainproRunner, scratch_dir):
+    def test_write_basic(self, runner: BrainproRunner, fixtures_dir: Path):
         """Write tool can create new files."""
         prompt = 'Create a file at fixtures/scratch/test.txt containing exactly the text "validation test passed"'
 
         result = runner.oneshot(prompt)
 
         assert_exit_code(0, result.exit_code)
-        assert_file_exists(scratch_dir.path / "test.txt")
-        assert_file_contains(scratch_dir.path / "test.txt", "validation")
+        assert_file_exists(fixtures_dir / "scratch" / "test.txt")
+        assert_file_contains(fixtures_dir / "scratch" / "test.txt", "validation")
         assert_tool_called("Write", result.output)
 
-    def test_edit_basic(self, runner: BrainproRunner, scratch_dir, fixtures_dir: Path):
+    def test_edit_basic(self, runner: BrainproRunner, fixtures_dir: Path):
         """Edit tool can modify existing files."""
         # Create initial file by copying from fixture
         src_file = fixtures_dir / "hello_repo" / "src" / "lib.rs"
-        dst_file = scratch_dir.path / "lib.rs"
+        dst_file = fixtures_dir / "scratch" / "lib.rs"
         shutil.copy(src_file, dst_file)
 
         prompt = 'In fixtures/scratch/lib.rs, change the TODO comment to say "greeting implemented"'
@@ -79,19 +79,21 @@ class TestTools:
         assert_tool_called("Glob", result.output)
 
     def test_grep_basic(self, runner: BrainproRunner):
-        """Grep tool searches file contents."""
+        """Grep/Search tool searches file contents."""
         prompt = 'Search for the word "greet" in fixtures/hello_repo/src'
 
         result = runner.oneshot(prompt)
 
         assert_exit_code(0, result.exit_code)
         assert_output_contains("lib.rs", result.output)
-        assert_tool_called("Grep", result.output)
+        # Accept either Grep or Search tool (Search is the primary search tool)
+        assert "Grep" in result.output or "Search" in result.output, \
+            f"Neither Grep nor Search tool was called\n\nOutput:\n{result.output[:2000]}"
 
-    def test_patch_basic(self, runner: BrainproRunner, scratch_dir):
+    def test_patch_basic(self, runner: BrainproRunner, fixtures_dir: Path):
         """Patch tool can apply unified diffs."""
         # Create initial file
-        example_file = scratch_dir.path / "example.txt"
+        example_file = fixtures_dir / "scratch" / "example.txt"
         example_file.write_text("line 1\nline 2\nline 3\nline 4\n")
 
         prompt = '''Read fixtures/scratch/changes.patch and apply its contents to the target file using the Patch tool. The patch file contains:

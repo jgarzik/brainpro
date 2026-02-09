@@ -12,8 +12,8 @@ from harness.assertions import (
     assert_git_clean,
 )
 
-# Path to mock_webapp_scratch (now in /tmp)
-WEBAPP = "/tmp/brainpro-mock-webapp-scratch"
+# Path to mock_webapp_scratch (relative to project root for tool compatibility)
+WEBAPP = "fixtures/mock_webapp_scratch"
 
 
 class TestGit:
@@ -29,8 +29,8 @@ class TestGit:
         main_rs.write_text(content + "\n// Added for testing git commit\n")
 
         prompt = (
-            f"Stage the changes to {WEBAPP}/src/main.rs and create a commit with an appropriate "
-            "message describing the change."
+            f"In the git repository at {WEBAPP}, stage the changes to src/main.rs and create a commit "
+            "with an appropriate message describing the change. Run the git commands from within that directory."
         )
 
         result = webapp_runner.oneshot(prompt)
@@ -45,7 +45,7 @@ class TestGit:
         self, webapp_runner: BrainproRunner, mock_webapp: MockWebapp
     ):
         """Ask brainpro to create a feature branch."""
-        prompt = f"Create a new git branch called 'feature/auth-improvements' in {WEBAPP} and switch to it."
+        prompt = f"In the git repository at {WEBAPP}, create a new branch called 'feature/auth-improvements' and switch to it. Run the git commands from within that directory."
 
         result = webapp_runner.oneshot(prompt)
 
@@ -69,7 +69,7 @@ class TestGit:
         content = main_rs.read_text()
         main_rs.write_text(content + "\n// Test change\n")
 
-        prompt = f"Check the git status of {WEBAPP} and tell me what files have been modified."
+        prompt = f"Run 'git status' in the {WEBAPP} directory and tell me what files have been modified."
 
         result = webapp_runner.oneshot(prompt)
 

@@ -9,6 +9,8 @@ pub struct Config {
     pub port: u16,
     /// Enable debug mode
     pub debug: bool,
+    /// Maximum number of concurrent sessions
+    pub max_sessions: u32,
 }
 
 impl Config {
@@ -22,6 +24,10 @@ impl Config {
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(8080),
             debug: std::env::var("DEBUG").is_ok(),
+            max_sessions: std::env::var("MAX_SESSIONS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(100),
         }
     }
 }

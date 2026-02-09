@@ -121,7 +121,7 @@ fn main() -> Result<()> {
     // Apply default target based on available API keys
     if cfg.default_target.is_none() {
         if std::env::var("VENICE_API_KEY").is_ok() || std::env::var("venice_api_key").is_ok() {
-            cfg.default_target = Some("qwen3-235b-a22b-instruct-2507@venice".to_string());
+            cfg.default_target = Some("claude-sonnet-45@venice".to_string());
         } else if std::env::var("OPENAI_API_KEY").is_ok() {
             cfg.default_target = Some("gpt-4o-mini@chatgpt".to_string());
         } else if std::env::var("ANTHROPIC_API_KEY").is_ok() {
@@ -157,7 +157,7 @@ fn main() -> Result<()> {
         prompt: args.prompt.clone(),
         api_key: None,
         base_url: "https://api.venice.ai/api/v1".to_string(),
-        model: "qwen3-235b-a22b-instruct-2507".to_string(),
+        model: "claude-sonnet-45".to_string(),
         yes: args.yes,
         transcripts_dir: None,
         trace: args.trace,
