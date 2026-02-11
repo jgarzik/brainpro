@@ -34,6 +34,11 @@ pub fn apply_default_target(cfg: &mut Config) {
         cfg.default_target = Some("gpt-4o-mini@chatgpt".to_string());
     } else if std::env::var("ANTHROPIC_API_KEY").is_ok() {
         cfg.default_target = Some("claude-3-5-sonnet-latest@claude".to_string());
+    } else if crate::claude_auth::load_opencode_token()
+        .map(|t| !t.is_expired())
+        .unwrap_or(false)
+    {
+        cfg.default_target = Some("claude-opus-4-5@claude".to_string());
     }
 }
 
@@ -170,7 +175,20 @@ mod tests {
             env::set_var("ANTHROPIC_API_KEY", k);
         }
 
-        assert!(cfg.default_target.is_none());
+        // With no env keys, the only possible fallback is opencode's auth.json.
+        // If that file exists with a valid token, we auto-detect claude.
+        let has_opencode_token = crate::claude_auth::load_opencode_token()
+            .map(|t| !t.is_expired())
+            .unwrap_or(false);
+
+        if has_opencode_token {
+            assert_eq!(
+                cfg.default_target.as_deref(),
+                Some("claude-opus-4-5@claude")
+            );
+        } else {
+            assert!(cfg.default_target.is_none());
+        }
     }
 
     #[test]
