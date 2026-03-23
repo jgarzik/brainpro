@@ -511,7 +511,8 @@ pub fn run_loop<H: AgentHooks>(
             req_messages.extend(messages.clone());
 
             // Inject continuation reminder after iteration 1 to encourage task completion
-            if iteration > 1 {
+            // Skip at max iteration — wind-down message already tells model to stop
+            if iteration > 1 && !iteration_at_max {
                 req_messages.push(json!({
                     "role": "user",
                     "content": format!(
