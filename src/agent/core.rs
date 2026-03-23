@@ -443,10 +443,20 @@ pub fn run_loop<H: AgentHooks>(
     let mut doom_detector = DoomLoopDetector::new();
 
     for iteration in 1..=max_iterations {
-        if iteration == max_iterations {
+        // At max iterations, inject wind-down message and disable tools
+        let iteration_at_max = iteration == max_iterations;
+        if iteration_at_max {
             messages.push(json!({
                 "role": "system",
-                "content": "Max tool iterations reached. Summarize progress, list next steps, and stop calling tools."
+                "content": format!(
+                    "CRITICAL - MAXIMUM ITERATIONS REACHED ({}). Tools are disabled. Respond with text only.\n\n\
+                    You MUST provide:\n\
+                    1. Summary of what was accomplished\n\
+                    2. List of any remaining incomplete tasks\n\
+                    3. Recommendations for what should be done next\n\n\
+                    Any attempt to use tools will fail. Respond with text ONLY.",
+                    max_iterations
+                )
             }));
         }
         trace(ctx, "ITER", &format!("Starting iteration {}", iteration));
@@ -501,18 +511,24 @@ pub fn run_loop<H: AgentHooks>(
             req_messages.extend(messages.clone());
 
             // Inject continuation reminder after iteration 1 to encourage task completion
-            if iteration > 1 {
+            // Skip at max iteration — wind-down message already tells model to stop
+            if iteration > 1 && !iteration_at_max {
                 req_messages.push(json!({
                     "role": "user",
-                    "content": "<system-reminder>Continue with your tasks. Don't stop until the original request is fully addressed.</system-reminder>"
+                    "content": format!(
+                        "<system-reminder>Continue with your tasks. Don't stop until the original request is fully addressed.\n\
+                        If stuck, try a different approach. Do not repeat identical tool calls.\n\
+                        Iteration {} of {}.</system-reminder>",
+                        iteration, max_iterations
+                    )
                 }));
             }
 
             let request = llm::ChatRequest {
                 model: target.model.clone(),
                 messages: req_messages,
-                tools: Some(tool_schemas.clone()),
-                tool_choice: Some("auto".to_string()),
+                tools: if iteration_at_max { None } else { Some(tool_schemas.clone()) },
+                tool_choice: if iteration_at_max { None } else { Some("auto".to_string()) },
             };
 
             client.chat(&request)?

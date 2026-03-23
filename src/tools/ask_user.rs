@@ -69,7 +69,7 @@ pub fn schema(opts: &SchemaOptions) -> Value {
             "type": "function",
             "function": {
                 "name": "AskUserQuestion",
-                "description": "Ask the user questions when you need clarification or input. Present options for the user to choose from.",
+                "description": "Ask the user questions when you need clarification or input. Use when genuinely ambiguous (multiple valid interpretations) or when user preference matters. Mark recommended options with '(Recommended)' suffix in the label. Do NOT ask when you can reasonably infer the answer from context.",
                 "parameters": {
                     "type": "object",
                     "properties": {

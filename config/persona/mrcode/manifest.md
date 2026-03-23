@@ -6,10 +6,16 @@ default_tools:
   - Read
   - Write
   - Edit
+  - Patch
   - Glob
-  - Grep
-  - Bash
   - Search
+  - Bash
+  - Task
+  - TodoWrite
+  - AskUserQuestion
+  - EnterPlanMode
+  - ExitPlanMode
+  - ActivateSkill
 permission_mode: default
 ---
 

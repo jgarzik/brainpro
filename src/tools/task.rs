@@ -42,7 +42,7 @@ pub fn schema(opts: &SchemaOptions) -> Value {
             "type": "function",
             "function": {
                 "name": "Task",
-                "description": "Delegate a task to a specialized subagent. Use /agents to see available agents.",
+                "description": "Delegate a task to a specialized subagent. NOT for simple file reads or single-tool operations — use Read/Glob/Search directly. Launch multiple Task calls concurrently in a single turn when tasks are independent. Specify in prompt whether expecting code changes, research/analysis, or test results. Provide input_context.files with relevant file paths for context. Use /agents to see available agents.",
                 "parameters": {
                     "type": "object",
                     "properties": {

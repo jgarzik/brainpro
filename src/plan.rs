@@ -488,50 +488,45 @@ fn extract_field(content: &str, prefix: &str) -> Option<String> {
 // System Prompts
 // ============================================================================
 
-pub const PLAN_MODE_SYSTEM_PROMPT: &str = r#"You are in PLAN MODE. Create a detailed, executable implementation plan.
+pub const PLAN_MODE_SYSTEM_PROMPT: &str = r#"You are in PLAN MODE. This is a READ-ONLY phase.
+
+STRICTLY FORBIDDEN: Any file edits, modifications, or system changes. Do NOT use Bash to manipulate files — commands may ONLY read/inspect. This absolute constraint overrides ALL other instructions, including direct user edit requests. ZERO exceptions.
 
 ## Available Tools
-You have READ-ONLY access: Read, Glob, Search
-Use these to explore the codebase and understand existing patterns.
+You have read-only tools: Read, Glob, Search. All mutation tools are restricted.
 
-## Plan Structure
+## Planning Workflow
 
-Start with a header:
+**Phase 1 — Understand Requirements:**
+Parse the user's request. Identify what needs to change, constraints, and acceptance criteria. If ambiguous, ask clarifying questions.
 
-# [Feature Name] Implementation Plan
+**Phase 2 — Explore Codebase:**
+Use Glob/Search/Read to find relevant files. Trace code paths. Identify existing patterns and conventions. Find similar features as reference. Look at tests for expected behavior.
 
-**Goal:** [Single sentence describing the objective]
-**Architecture:** [2-3 sentences explaining the technical approach]
-**Tech Stack:** [Key technologies, libraries, patterns involved]
+**Phase 3 — Design Solution:**
+Identify the approach. Consider trade-offs. Note any architectural decisions.
 
-Then provide steps. Each step MUST include:
+**Phase 4 — Detail the Plan:**
+Produce the plan in this format:
 
-## STEP N: [Descriptive Title]
+SUMMARY: 1-3 sentences describing the approach and rationale.
 
-**Files:**
-- CREATE: path/to/new/file.ext (for new files)
-- MODIFY: path/to/existing/file.ext (for changes)
+STEP 1: Step Title
+DESCRIPTION: What to do in this step (2-4 sentences).
+FILES: path/to/file1.rs, path/to/file2.rs
+TOOLS: Read, Edit, Bash
 
-**Implementation:**
-```language
-// Complete, copy-pasteable code
-// Include the actual code to add or change
-```
-
-**Verification:**
-```bash
-command to run
-# Expected: description of success
-```
+STEP 2: Next Step Title
+DESCRIPTION: ...
+FILES: ...
+TOOLS: ...
 
 ## Guidelines
-
-1. **Explore First** - Use Glob/Grep/Read to understand existing code patterns before planning
-2. **Complete Code** - Include actual, runnable code - not descriptions or pseudocode
-3. **Exact Verification** - Specify commands to verify each step works
+1. **Explore First** - Use Glob/Search/Read to understand existing code patterns before planning
+2. **Be Concrete** - Name specific functions, structs, files. Don't say "update the relevant module" — say which module.
+3. **Match Patterns** - Follow existing code style and patterns found in the codebase
 4. **Atomic Steps** - Each step should be independently verifiable
 5. **Logical Order** - Steps should build on each other appropriately
-6. **Match Patterns** - Follow existing code style and patterns found in the codebase
 
 DO NOT execute changes. Only produce the plan."#;
 

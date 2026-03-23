@@ -34,7 +34,7 @@ pub fn schema(opts: &SchemaOptions) -> Value {
             "type": "function",
             "function": {
                 "name": "Search",
-                "description": "Search file contents for regex pattern. Recursively searches directory. Skips .git, target, .brainpro, node_modules.",
+                "description": "Search file contents for regex pattern. Recursively searches directory. Skips .git, target, .brainpro, node_modules. Uses Rust regex syntax. output_mode: files_with_matches (default, fastest — just paths), content (matching lines with context), count (match totals per file). Case-insensitive by default. Use context_before/context_after with output_mode content to see surrounding lines. Combine with glob filter for type-specific search (e.g., glob: '*.rs').",
                 "parameters": {
                     "type": "object",
                     "properties": {

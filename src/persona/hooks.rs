@@ -8,6 +8,7 @@ use crate::cli::Context;
 use crate::persona::loader::{self, PersonaConfig};
 use crate::persona::PromptContext;
 use crate::plan;
+use chrono::Local;
 use serde_json::Value;
 
 /// Shared hooks implementation for persona-based agents.
@@ -42,6 +43,9 @@ impl<'a> AgentHooks for PersonaHooks<'a> {
                 "\n\nAI-to-AI mode. Maximum information density. Structure over prose. No narration.",
             );
         }
+
+        // Add dynamic environment section
+        system_prompt.push_str(&build_environment_section(ctx));
 
         // Add skill pack index
         let skill_index = ctx.skill_index.borrow();
@@ -80,4 +84,47 @@ impl<'a> AgentHooks for PersonaHooks<'a> {
             schemas
         }
     }
+}
+
+/// Build a dynamic environment section for the system prompt.
+///
+/// Includes current date, platform, model name, and git repo info.
+fn build_environment_section(ctx: &Context) -> String {
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let platform = format!("{} {}", std::env::consts::OS, std::env::consts::ARCH);
+
+    let model_info = ctx
+        .current_target
+        .borrow()
+        .as_ref()
+        .map(|t| format!("{} (backend: {})", t.model, t.backend))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let git_head = ctx.root.join(".git").join("HEAD");
+    let git_info = if git_head.exists() {
+        let branch = std::fs::read_to_string(&git_head)
+            .ok()
+            .and_then(|contents| {
+                let line = contents.lines().next()?.trim().to_string();
+                if let Some(rest) = line.strip_prefix("ref:") {
+                    // Normal branch: "ref: refs/heads/main"
+                    let path = rest.trim();
+                    Some(path.rsplit('/').next().unwrap_or(path).to_string())
+                } else if !line.is_empty() {
+                    // Detached HEAD: raw commit hash, shorten for display
+                    Some(line.chars().take(7).collect())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        format!("yes, branch: {}", branch)
+    } else {
+        "no".to_string()
+    };
+
+    format!(
+        "\n\n## Environment\n- Date: {}\n- Platform: {}\n- Model: {}\n- Git repo: {}",
+        date, platform, model_info, git_info
+    )
 }

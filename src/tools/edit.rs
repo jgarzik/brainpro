@@ -37,7 +37,7 @@ pub fn schema(opts: &SchemaOptions) -> Value {
             "type": "function",
             "function": {
                 "name": "Edit",
-                "description": "Edit file with find/replace. Requires permission.",
+                "description": "Edit file with find/replace. Requires permission. MUST Read the file first before editing. Tries exact match first; falls back to fuzzy matching (whitespace/indentation normalization) if exact fails. Each find should be unique in the file to avoid wrong-match edits. Preserve indentation in both find and replace. Use count:0 to replace all occurrences (e.g., variable rename). Multiple edits in one call are applied sequentially.",
                 "parameters": {
                     "type": "object",
                     "properties": {

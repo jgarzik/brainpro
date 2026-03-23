@@ -25,7 +25,7 @@ pub fn schema(opts: &SchemaOptions) -> Value {
             "type": "function",
             "function": {
                 "name": "Read",
-                "description": "Read file content. Paths relative to project root.",
+                "description": "Read file content. Paths relative to project root. Output format: 'line_number: content' for text files, base64 for binary. Read in larger windows (200+ lines); avoid tiny 30-line reads. Call Read on multiple files in parallel when possible. Returns sha256 hash for change detection.",
                 "parameters": {
                     "type": "object",
                     "properties": {
