@@ -26,7 +26,7 @@ pub fn schema(opts: &SchemaOptions) -> Value {
             "type": "function",
             "function": {
                 "name": "Patch",
-                "description": "Apply unified diff patch to file(s). Supports git diff format.",
+                "description": "Apply unified diff patch to file(s). Accepts standard unified diff format (from git diff or manual). Strips a/ and b/ prefixes automatically. Use dry_run:true to validate without applying. Preferred for large multi-hunk changes; use Edit for small targeted changes.",
                 "parameters": {
                     "type": "object",
                     "properties": {

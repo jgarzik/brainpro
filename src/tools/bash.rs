@@ -60,7 +60,7 @@ pub fn schema(opts: &SchemaOptions) -> Value {
             "type": "function",
             "function": {
                 "name": "Bash",
-                "description": "Execute a shell command in the project directory. Commands are parsed as shell words (not passed to sh -c). Returns stdout, stderr, and exit code. Use for builds, tests, git operations, etc.",
+                "description": "Execute a shell command in the project directory. NOT for file reading/writing — use Read, Write, Edit tools instead. Avoid cat, head, tail, grep, find, sed, awk — use Read, Search, Glob dedicated tools. Commands parsed as shell words (not sh -c). Returns stdout, stderr, and exit code. Git safety: never amend commits, never force push, never skip hooks (--no-verify), never use interactive flags (-i). Only create git commits when explicitly asked.",
                 "parameters": {
                     "type": "object",
                     "properties": {

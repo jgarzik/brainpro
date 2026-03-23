@@ -24,7 +24,7 @@ pub fn schema(opts: &SchemaOptions) -> Value {
             "type": "function",
             "function": {
                 "name": "Glob",
-                "description": "Find files matching glob pattern. Skips .git, target, .brainpro dirs.",
+                "description": "Find files matching glob pattern. Returns paths relative to project root, sorted by modification time. Skips .git, target, .brainpro, node_modules dirs. Use **/*.rs for recursive, src/*.rs for single-directory. For open-ended searches requiring multiple rounds of globbing/grepping, use Task tool instead.",
                 "parameters": {
                     "type": "object",
                     "properties": {

@@ -115,7 +115,7 @@ pub fn schema(opts: &SchemaOptions) -> Value {
             "type": "function",
             "function": {
                 "name": "TodoWrite",
-                "description": "Create and manage a structured task list. Use to track progress on multi-step tasks. Mark tasks as in_progress before starting, completed when done.",
+                "description": "Create and manage a structured task list. USE for: complex multi-step tasks (3+ steps), after receiving new instructions, when user provides multiple tasks. DO NOT USE for: single straightforward tasks, trivial operations completable in 1-2 tool calls. Only ONE task can be in_progress at a time. Mark tasks completed IMMEDIATELY after finishing, before starting next. Send the COMPLETE todo list each call (replaces previous).",
                 "parameters": {
                     "type": "object",
                     "properties": {

@@ -25,7 +25,7 @@ pub fn schema(opts: &SchemaOptions) -> Value {
             "type": "function",
             "function": {
                 "name": "Write",
-                "description": "Create or overwrite a file. Requires permission.",
+                "description": "Create or overwrite a file. Requires permission. MUST Read existing files before overwriting to avoid data loss. Prefer Edit tool for modifying existing files (surgical changes). Never create documentation/README files unless explicitly asked. Creates parent directories automatically.",
                 "parameters": {
                     "type": "object",
                     "properties": {
