@@ -1,6 +1,7 @@
 use super::SchemaOptions;
 use serde_json::{json, Value};
 use std::path::Path;
+use std::time::SystemTime;
 
 pub fn schema(opts: &SchemaOptions) -> Value {
     if opts.optimize {
@@ -51,8 +52,8 @@ pub fn execute(args: Value, root: &Path) -> anyhow::Result<Value> {
         }
     };
 
-    let mut paths = Vec::new();
-    let mut truncated = false;
+    // Collect paths with modification times for sorting
+    let mut entries_with_mtime: Vec<(String, SystemTime)> = Vec::new();
 
     for entry in entries {
         let path = match entry {
@@ -65,14 +66,23 @@ pub fn execute(args: Value, root: &Path) -> anyhow::Result<Value> {
         }
 
         let rel = path.strip_prefix(root).unwrap_or(&path);
+        let mtime = path
+            .metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
 
-        if paths.len() >= max_results {
-            truncated = true;
-            break;
-        }
-
-        paths.push(rel.to_string_lossy().to_string());
+        entries_with_mtime.push((rel.to_string_lossy().to_string(), mtime));
     }
+
+    // Sort by modification time, most recent first
+    entries_with_mtime.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let truncated = entries_with_mtime.len() > max_results;
+    let paths: Vec<String> = entries_with_mtime
+        .into_iter()
+        .take(max_results)
+        .map(|(p, _)| p)
+        .collect();
 
     Ok(json!({
         "paths": paths,
