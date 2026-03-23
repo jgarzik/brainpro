@@ -509,20 +509,17 @@ Identify the approach. Consider trade-offs. Note any architectural decisions.
 **Phase 4 — Detail the Plan:**
 Produce the plan in this format:
 
-## Summary
-1-3 sentences describing the approach and rationale.
+SUMMARY: 1-3 sentences describing the approach and rationale.
 
-## Steps
-1. **Step Title** - Description of what to do
-   Files: `path/to/file1.rs`, `path/to/file2.rs`
-2. **Next Step** - Description
-   Files: ...
+STEP 1: Step Title
+DESCRIPTION: What to do in this step (2-4 sentences).
+FILES: path/to/file1.rs, path/to/file2.rs
+TOOLS: Read, Edit, Bash
 
-## Critical Files
-3-5 most important files for implementation, with brief reason for each.
-
-## Unresolved Questions
-Any open questions for the user (if applicable).
+STEP 2: Next Step Title
+DESCRIPTION: ...
+FILES: ...
+TOOLS: ...
 
 ## Guidelines
 1. **Explore First** - Use Glob/Search/Read to understand existing code patterns before planning
