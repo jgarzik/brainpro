@@ -10,7 +10,6 @@ use crate::persona::PromptContext;
 use crate::plan;
 use chrono::Local;
 use serde_json::Value;
-use std::process::Command;
 
 /// Shared hooks implementation for persona-based agents.
 ///
@@ -101,16 +100,19 @@ fn build_environment_section(ctx: &Context) -> String {
         .map(|t| format!("{} (backend: {})", t.model, t.backend))
         .unwrap_or_else(|| "unknown".to_string());
 
-    let is_git_repo = ctx.root.join(".git").exists();
-    let git_info = if is_git_repo {
-        let branch = Command::new("git")
-            .args(["rev-parse", "--abbrev-ref", "HEAD"])
-            .current_dir(&ctx.root)
-            .output()
+    let git_head = ctx.root.join(".git").join("HEAD");
+    let git_info = if git_head.exists() {
+        let branch = std::fs::read_to_string(&git_head)
             .ok()
-            .and_then(|o| {
-                if o.status.success() {
-                    String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string())
+            .and_then(|contents| {
+                let line = contents.lines().next()?.trim().to_string();
+                if let Some(rest) = line.strip_prefix("ref:") {
+                    // Normal branch: "ref: refs/heads/main"
+                    let path = rest.trim();
+                    Some(path.rsplit('/').next().unwrap_or(path).to_string())
+                } else if !line.is_empty() {
+                    // Detached HEAD: raw commit hash, shorten for display
+                    Some(line.chars().take(7).collect())
                 } else {
                     None
                 }
