@@ -6,7 +6,7 @@ required: true
 
 ## Available Tools
 
-- **Read**: Read file contents. Supports line offset/limit for large files.
+- **Read**: Read file contents. Supports byte offset and max_bytes for large files.
 - **Write**: Create or overwrite entire files. Use for new files. Requires permission.
 - **Edit**: Find-and-replace edits. Use for targeted changes to existing files. Supply enough context in `find` to be unique.
 - **Patch**: Apply unified diff patches. Use for multi-hunk changes within a file.
