@@ -527,7 +527,7 @@ pub fn run_loop<H: AgentHooks>(
                 model: target.model.clone(),
                 messages: req_messages,
                 tools: if iteration_at_max { None } else { Some(tool_schemas.clone()) },
-                tool_choice: Some("auto".to_string()),
+                tool_choice: if iteration_at_max { None } else { Some("auto".to_string()) },
             };
 
             client.chat(&request)?
