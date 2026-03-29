@@ -6,6 +6,8 @@
 pub mod agent;
 mod agent_impl;
 pub mod agent_policy;
+pub mod claude_api;
+pub mod claude_auth;
 pub mod agent_service;
 pub mod backend;
 pub mod circuit_breaker;

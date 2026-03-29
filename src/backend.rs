@@ -43,7 +43,7 @@ impl BackendRegistry {
             })?;
 
             // Create client with the secret API key
-            let client = Client::new(&config.base_url, api_key);
+            let client = Client::new(&config.base_url, api_key, config.api_format.clone());
             self.clients.insert(backend.to_string(), client);
         }
 
@@ -69,7 +69,7 @@ impl BackendRegistry {
                 )
             })?;
 
-            let client = StreamingClient::new(&config.base_url, api_key);
+            let client = StreamingClient::new(&config.base_url, api_key, config.api_format.clone());
             self.streaming_clients.insert(backend.to_string(), client);
         }
 
