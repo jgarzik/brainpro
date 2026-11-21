@@ -56,6 +56,7 @@ walkdir = "2"
 shell-words = "1.1"
 async-trait = "0.1"
 tiktoken-rs = "0.6"
+llm-prices = "1.8.0"
 
 # Channel integrations (optional)
 teloxide = { version = "0.14", features = ["macros"], optional = true }
