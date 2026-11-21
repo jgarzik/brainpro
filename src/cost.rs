@@ -331,20 +331,29 @@ impl PricingTable {
     }
 
     /// Get pricing for a model (falls back to default if unknown)
-    pub fn get(&self, model: &str) -> &ModelPricing {
+    pub fn get(&self, model: &str) -> ModelPricing {
         // Try exact match first
         if let Some(pricing) = self.models.get(model) {
-            return pricing;
+            return pricing.clone();
         }
 
-        // Try prefix matching for versioned models (e.g., "gpt-4o-2024-08-06" -> "gpt-4o")
-        for (name, pricing) in &self.models {
-            if model.starts_with(name) {
-                return pricing;
+        // Resolve dated, aliased and provider-prefixed ids against published list prices
+        if let Some(p) = llm_prices::lookup(model) {
+            if let Some(pricing) = self.models.get(p.model) {
+                return pricing.clone();
+            }
+            if let Some(input) = p.input {
+                return ModelPricing::new(input, p.output.unwrap_or(0.0));
             }
         }
 
-        &self.default_pricing
+        // Longest prefix wins for versioned models (e.g., "gpt-4o-2024-08-06" -> "gpt-4o")
+        self.models
+            .iter()
+            .filter(|(name, _)| model.starts_with(name.as_str()))
+            .max_by_key(|(name, _)| name.len())
+            .map(|(_, pricing)| pricing.clone())
+            .unwrap_or_else(|| self.default_pricing.clone())
     }
 
     /// Calculate cost for given model and token counts
@@ -408,6 +417,18 @@ mod tests {
         // Versioned model should match base model
         let pricing = table.get("gpt-4o-2024-08-06");
         assert_eq!(pricing.input, 2.50);
+    }
+
+    #[test]
+    fn test_pricing_table_resolves_snapshots_and_new_models() {
+        let table = PricingTable::with_defaults();
+        // Must not fall through to "gpt-4o" via HashMap iteration order
+        assert_eq!(table.get("gpt-4o-mini-2024-07-18").input, 0.15);
+        // Must not bill at the "claude-opus-4" prefix ($15/$75)
+        let opus = table.get("claude-opus-4-6");
+        assert_eq!((opus.input, opus.output), (5.00, 25.00));
+        // Not in the static table, still not the $1/$3 default
+        assert_eq!(table.get("gpt-5").input, 1.25);
     }
 
     #[test]
